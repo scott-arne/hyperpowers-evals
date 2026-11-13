@@ -3,7 +3,8 @@
 # The compaction re-read notice campaign's launcher, copied from
 # ../2026-11-03-cost-reduction-6-16-2/launch-all.sh with the arm list widened
 # to control, treatment and shipped, then slice and baseline-6181 for the
-# 2026-11-12 revision (and their pin keys with them).
+# 2026-11-12 revision and controller for revision 2 (and their pin keys with
+# them).
 # Validates every row of the manifest first, then runs every five-field row
 # (arm, scenario, repeat, proc, budget; budget is always `default` in this
 # campaign) through the launcher, at most N at a time (default 8), waits for
@@ -42,13 +43,13 @@ while IFS= read -r line || [ -n "$line" ]; do
   IFS=$'\t' read -r -a f <<< "$line"
   [ "${#f[@]}" -eq $((ntab + 1)) ] || { echo "malformed row '$line'" >&2; bad=1; continue; }
   case "${#f[@]}" in
-    2) case "${f[0]}" in harness|control|treatment|shipped|slice|baseline-6181|model) continue ;; esac
+    2) case "${f[0]}" in harness|control|treatment|shipped|slice|baseline-6181|controller|model) continue ;; esac
        echo "malformed row '$line'" >&2; bad=1; continue ;;
     5) ;;
     *) echo "malformed row '$line'" >&2; bad=1; continue ;;
   esac
   arm="${f[0]}"; scen="${f[1]}"; rep="${f[2]}"; proc="${f[3]}"; budget="${f[4]}"
-  case "$arm" in control|treatment|shipped|slice|baseline-6181) ;; *) echo "malformed arm '$arm' in row '$line'" >&2; bad=1; continue ;; esac
+  case "$arm" in control|treatment|shipped|slice|baseline-6181|controller) ;; *) echo "malformed arm '$arm' in row '$line'" >&2; bad=1; continue ;; esac
   case "$proc" in p[0-9]|p[0-9][0-9]) ;; *) echo "malformed proc id '$proc' in row $arm $scen" >&2; bad=1; continue ;; esac
   case "$rep" in [1-9]|[1-9][0-9]) ;; *) echo "malformed repeat '$rep' in row $arm $scen $proc" >&2; bad=1; continue ;; esac
   case "$budget" in default) ;; *) echo "malformed budget '$budget' in row $arm $scen $proc" >&2; bad=1; continue ;; esac

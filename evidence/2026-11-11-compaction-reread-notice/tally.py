@@ -7,9 +7,11 @@ Usage::
     python3 tally.py --run RUN_ID --arm ARM --scenario NAME   # one run (smoke)
 
 It exits 0, or 1 when ``sentinel-reruns.tsv`` (original, replacement; tab
-separated) breaks a rule, or when the revision cannot read the step files'
-line counts (a ``slice`` log with no ``slice`` pin in ``manifest.tsv``, or a
-``git show`` of a step file at that pin failing).
+separated) breaks a rule, when the revision cannot read the step files'
+line counts (a ``slice`` or ``controller`` log with no pin for its arm in
+``manifest.tsv``, or a ``git show`` of a step file at that pin failing), or
+when a ``controller`` log names a scenario other than
+``sdd-compaction-reread``.
 
 Spec: ``docs/hyperpowers/specs/2026-11-11-compaction-reread-notice-design.md``
 in the hyperpowers repository: "Testing (revised)" for the default reading,
@@ -21,15 +23,19 @@ Revision (the default). Arms: ``baseline-6181`` (control, released v6.18.1
 ``logs/baseline-6181-sdd-compaction-reread-r<n>.log`` from
 ``measure-launch.sh``) and ``slice`` on ``sdd-compaction-reread`` (treatment)
 and on ``compaction-no-skill`` (sentinel), logs ``logs/slice-<scenario>-<proc>.log``.
+Revision 2 (2026-11-13) adds ``controller``, the integration head after the
+notice came out, on ``sdd-compaction-reread`` only, logs
+``logs/controller-sdd-compaction-reread-<proc>.log``; it is read exactly as
+``slice``'s SDD cell, with step-file line counts from its own pin.
 The old arms are read only under ``--waves-1-2``, and the revision arms only
 without it; each mode skips the other's logs without a line.
 
-* SDD validity (both SDD arms; replaces the 6.16.2 window rule): void kinds
-  ``launch``, ``setup``, ``grader``, ``instrument`` (as ``void_kind`` and the
-  log rules read them) and ``no-compaction`` (no automatic compaction after
-  the SDD skill event). Every other run is valid. Outcome passes when the
-  final verdict is ``pass``, every post check passed, and the run dispatched
-  at least one ``implement`` subagent. A run ending in the thrash stop (any
+* SDD validity (every revision SDD arm; replaces the 6.16.2 window rule):
+  void kinds ``launch``, ``setup``, ``grader``, ``instrument`` (as
+  ``void_kind`` and the log rules read them) and ``no-compaction`` (no
+  automatic compaction after the SDD skill event). Every other run is valid.
+  Outcome passes when the final verdict is ``pass``, every post check
+  passed, and the run dispatched at least one ``implement`` subagent. A run ending in the thrash stop (any
   thrash entry, even after a passing verdict, and a grader void does not
   apply to it), or with no dispatch, is valid and fails its outcome.
 * Thrash: a main-thread assistant entry whose ``message.model`` is
@@ -48,12 +54,12 @@ without it; each mode skips the other's logs without a line.
   before it; the compaction is followed when, before the next governed
   action, (a) the session made a credited Read covering the step file that
   state names (a whole Read, or Reads covering every line of that file at the
-  ``slice`` pin), and (b) when a ledger existed, an ``sdd-state board`` call
-  returned ``status=board`` and a ``grep`` over ``progress.md`` returned the
-  session's ``setup complete`` line and, when a task is held, a ``Task <N>:``
-  line of that task. Governed actions: an Agent dispatch, a compaction, or a
-  Bash call that writes the ledger or runs an ``sdd-state`` subcommand other
-  than ``board``. An unreadable state is not followed. Reported per run and
+  arm's own pin, ``slice`` or ``controller``), and (b) when a ledger existed,
+  an ``sdd-state board`` call returned ``status=board`` and a ``grep`` over
+  ``progress.md`` returned the session's ``setup complete`` line and, when a
+  task is held, a ``Task <N>:`` line of that task. Governed actions: an
+  Agent dispatch, a compaction, or a Bash call that writes the ledger or runs
+  an ``sdd-state`` subcommand other than ``board``. An unreadable state is not followed. Reported per run and
   pooled: compactions, followed, any step file read (``any_step``), board and
   grep both credited (``ledger_parts``), SDD ``SKILL.md`` read (``skill``).
 * Sentinel: unchanged (``noskill_reading``, below).
@@ -61,8 +67,10 @@ without it; each mode skips the other's logs without a line.
   ``baseline-6181``'s; (2) no valid ``slice`` SDD run with ``thrash=1``; (3)
   at least 85% of pooled ``slice`` SDD compactions followed; (4) median
   ``slice`` SDD compactions per run at most 16; (5) sentinel failures at most
-  1 of 10. A cell with fewer than ten valid runs reads ``incomplete`` and its
-  bars read ``incomplete``.
+  1 of 10. Then, when ``manifest.tsv`` holds a ``controller`` pin or a
+  ``controller`` row exists, the ``controller`` cell line and bars 1-4 with
+  ``controller`` as the treatment. A cell with fewer than ten valid runs
+  reads ``incomplete`` and its bars read ``incomplete``.
 * Replacements: ``sentinel-reruns.tsv`` as below, at most three per cell
   (``r1``-``r3``); a row whose two runs both belong to the other mode is set
   aside.
@@ -199,7 +207,9 @@ PERSISTED = "<persisted-output>"
 SKILL_PATH = re.compile(r"/skills/([^/]+)/SKILL\.md$")
 STEP_FILES = ("setup.md", "task-loop.md", "review-and-complete.md", "fix-loop.md", "final-and-finish.md")
 STEP_PATH = re.compile(r"/skills/subagent-driven-development/(" + "|".join(map(re.escape, STEP_FILES)) + r")$")
-STEP_LINES: dict[str, int] = {}  # filled from the slice pin by load_step_lines()
+# Step-file line counts per arm, each from that arm's own pin, so a partial
+# Read in one arm is never judged against another commit's files.
+STEP_LINES: dict[str, dict[str, int]] = {}  # filled by load_step_lines()
 THRASH = "Autocompact is thrashing"
 N_TASKS = 4  # the sdd-compaction-reread fixture plan has four tasks
 LEDGER_TEXT = re.compile(
@@ -209,7 +219,9 @@ LEDGER_TEXT = re.compile(
 )
 SDD_STATE = re.compile(r"sdd-state\s+(?P<sub>[a-z-]+)(?:\s+(?:--\S+\s+)*\S+\s+(?P<arg>\d+|final)\b)?")
 OLD_ARMS = ("control", "treatment", "shipped")
-REVISION_ARMS = ("baseline-6181", "slice")
+REVISION_ARMS = ("baseline-6181", "slice", "controller")
+# The arms whose SDD runs are read against the compact controller's step files.
+STEP_ARMS = ("slice", "controller")
 
 
 def run_paths(arm: str, run_id: str) -> tuple[Path, list[Path]]:
@@ -998,9 +1010,15 @@ def step_state(lines: list[tuple[str, str]], n_tasks: int, sid: str) -> str | No
     return None
 
 
-def step_follows(found: list[dict[str, Any]], sid: str) -> dict[str, int]:
-    """Per-compaction recovery for the slice arm: the step file the table names, plus the board and grep."""
+def step_follows(found: list[dict[str, Any]], sid: str, arm: str) -> dict[str, int]:
+    """Per-compaction recovery: the step file the table names, plus the board and grep.
+
+    :param found: The run's events.
+    :param sid: The controller's session id.
+    :param arm: The arm whose pinned step-file line counts judge a partial Read.
+    """
     skill = "subagent-driven-development"
+    step_lines = STEP_LINES.get(arm, {})
     load = next((i for i, e in enumerate(found) if e["kind"] == "skill" and e["skill"].endswith(skill)), None)
     result = {"compactions": 0, "followed": 0, "any_step": 0, "ledger_parts": 0, "skill": 0}
     if load is None:
@@ -1033,7 +1051,7 @@ def step_follows(found: list[dict[str, Any]], sid: str) -> dict[str, int]:
         # A partial Read earns coverage only against a known line count, so a
         # missing count fails closed instead of covering an empty range.
         file_ok = want is not None and bool(hits) and (
-            any(e["whole"] for e in hits) or (want in STEP_LINES and covers_cut(hits, (1, STEP_LINES[want])))
+            any(e["whole"] for e in hits) or (want in step_lines and covers_cut(hits, (1, step_lines[want])))
         )
         result["followed"] += file_ok and (board and grep or not ledger)
         result["any_step"] += any(m for m, _ in step)
@@ -1066,28 +1084,34 @@ def manifest_pins() -> dict[str, str]:
 
 
 def load_step_lines() -> None:
-    """Fill ``STEP_LINES`` with each step file's line count at the ``slice`` pin.
+    """Fill ``STEP_LINES[arm]`` with each step file's line count at that arm's pin.
 
-    Coverage of a partial Read is measured against these counts, read from
-    the pinned commit in the hyperpowers repository, never from a live
-    checkout. Without a ``slice`` pin it leaves ``STEP_LINES`` empty, so
-    partial Reads fail closed; ``main()`` refuses to tally a ``slice`` log in
-    that case.
+    Each of ``slice`` and ``controller`` is read from its own pin. Coverage
+    of a partial Read is measured against these counts, read from the pinned
+    commit in the hyperpowers repository, never from a live checkout. An arm
+    without a pin gets no counts, so its partial Reads fail closed;
+    ``main()`` refuses to tally that arm's log in that case.
 
     :raises ValueError: When ``git show`` fails for a step file.
     """
-    pin = manifest_pins().get("slice")
-    if pin is None:
-        return
-    for name in STEP_FILES:
-        shown = subprocess.run(
-            ["git", "-C", str(HP_REPO), "show", f"{pin}:skills/subagent-driven-development/{name}"],
-            check=False, capture_output=True, text=True,
-        )
-        if shown.returncode != 0:
-            raise ValueError(f"git show {pin}:skills/subagent-driven-development/{name} failed: {shown.stderr.strip()}")
-        text = shown.stdout
-        STEP_LINES[name] = text.count("\n") + (0 if text.endswith("\n") else 1)
+    pins = manifest_pins()
+    for arm in STEP_ARMS:
+        pin = pins.get(arm)
+        if pin is None:
+            continue
+        counts: dict[str, int] = {}
+        for name in STEP_FILES:
+            shown = subprocess.run(
+                ["git", "-C", str(HP_REPO), "show", f"{pin}:skills/subagent-driven-development/{name}"],
+                check=False, capture_output=True, text=True,
+            )
+            if shown.returncode != 0:
+                raise ValueError(
+                    f"git show {pin}:skills/subagent-driven-development/{name} failed: {shown.stderr.strip()}"
+                )
+            text = shown.stdout
+            counts[name] = text.count("\n") + (0 if text.endswith("\n") else 1)
+        STEP_LINES[arm] = counts
 
 
 def arm_cut(arm: str) -> tuple[int, int]:
@@ -1209,9 +1233,11 @@ def load_reruns(
 RUN_ID = re.compile(r"^run-id: (\S+)$", re.MULTILINE)
 SCENARIOS = (SDD, NOSKILL)
 # The 2026-11-12 baseline logs predate the launcher's naming and carry no
-# scenario; its replacements come from measure-launch.sh and do.
+# scenario; its replacements come from measure-launch.sh and do. The
+# controller arm runs only on sdd-compaction-reread.
 LOG_NAME = re.compile(
-    r"^(?:(control|treatment|shipped|slice)-(" + "|".join(SCENARIOS) + r")-(p(?:[1-9]|10)|r[1-3])"
+    r"^(?:(control|treatment|shipped|slice|controller(?=-" + SDD + r"-))-(" + "|".join(SCENARIOS) + r")"
+    r"-(p(?:[1-9]|10)|r[1-3])"
     r"|baseline-6181-(p(?:[1-9]|10))|baseline-6181-" + SDD + r"-(r[1-3]))$"
 )
 EXPECTED_VALID = 10
@@ -1273,7 +1299,7 @@ def placeholder(arm: str, scenario: str, proc: str, kind: str) -> dict[str, Any]
 def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = True) -> dict[str, Any]:
     """Read one run and print its line.
 
-    :param arm: ``control``, ``treatment``, ``shipped``, ``baseline-6181`` or ``slice``.
+    :param arm: ``control``, ``treatment``, ``shipped``, ``baseline-6181``, ``slice`` or ``controller``.
     :param scenario: One of the two campaign scenarios.
     :param proc: The row's proc id.
     :param run_id: The quorum run id.
@@ -1296,7 +1322,7 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
         # The revised validity: no timing window, only a compaction after the
         # SDD skill event. A thrash stop or a run with no dispatch is a valid
         # failure, so neither is a void.
-        follows = step_follows(found, transcript_session(transcripts) or "")
+        follows = step_follows(found, transcript_session(transcripts) or "", arm)
         thrash = any(e["kind"] == "thrash" for e in found)
         # The stop leaves the Gauntlet-Agent unable to judge the finishing
         # step, so its "investigate" status says nothing about the run. This
@@ -1314,7 +1340,7 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
                 and not thrash
             )
         extra: dict[str, Any] = {"thrash": int(thrash), "compactions": follows["compactions"]}
-        if arm == "slice":
+        if arm in STEP_ARMS:
             extra.update(follows)
     elif scenario == SDD:
         cut = arm_cut(arm)
@@ -1400,19 +1426,25 @@ def collect(logs: Path, revision: bool = False, skipped: set[str] | None = None)
 
     A log that does not end ``DONE`` yields only void ``launch`` runs; a log
     naming no run id yields a placeholder keyed by the log's name. Only the
-    mode's arms are read: the revision arms (``baseline-6181``, ``slice``)
-    with ``revision``, else the old arms; the other mode's logs are skipped
-    without a line.
+    mode's arms are read: the revision arms (``baseline-6181``, ``slice``,
+    ``controller``) with ``revision``, else the old arms; the other mode's
+    logs are skipped without a line.
 
     :param logs: The log directory.
     :param revision: Read the revision arms instead of the old ones.
     :param skipped: When given, receives the run ids the other mode's logs
         name, so ``load_reruns`` can set their replacement rows aside.
     :returns: The runs keyed by run id.
+    :raises ValueError: With ``revision``, on a ``controller`` log for any
+        scenario but ``sdd-compaction-reread``.
     """
     arms = REVISION_ARMS if revision else OLD_ARMS
     runs: dict[str, dict[str, Any]] = {}
     for log in sorted(logs.glob("*.log")):
+        # The controller arm has no sentinel wave, so a controller log on
+        # another scenario is a launch mistake to stop on, not a row to skip.
+        if revision and log.stem.startswith("controller-") and not log.stem.startswith(f"controller-{SDD}-"):
+            raise ValueError(f"a controller log outside {SDD}: {log.name}")
         match = LOG_NAME.match(log.stem)
         mine = log.stem.startswith(tuple(f"{a}-" for a in arms))
         if not match:
@@ -1531,11 +1563,19 @@ def print_compaction_summary(runs: dict[str, dict[str, Any]], replaced: set[str]
 REVISION_CELLS = (("baseline-6181", SDD), ("slice", SDD), ("slice", NOSKILL))
 
 
-def summarize_revision(runs: dict[str, dict[str, Any]], replaced: set[str]) -> None:
-    """Print each revision cell's counts and the five revised bars.
+def summarize_revision(
+    runs: dict[str, dict[str, Any]], replaced: set[str], controller_pinned: bool = False
+) -> None:
+    """Print each revision cell's counts and the five revised bars, then the controller's.
 
     A cell with fewer than ten valid runs reads ``incomplete``, and so does
-    every bar that reads it.
+    every bar that reads it. The ``controller`` cell line and its four bars
+    print only when ``controller_pinned`` or a ``controller`` row exists, so
+    the output before the controller wave stays as it was.
+
+    :param runs: The rows keyed by run id.
+    :param replaced: The run ids a replacement stands in for.
+    :param controller_pinned: Whether ``manifest.tsv`` holds a ``controller`` pin.
     """
 
     def valid_in(arm: str, scenario: str) -> list[dict[str, Any]]:
@@ -1550,7 +1590,7 @@ def summarize_revision(runs: dict[str, dict[str, Any]], replaced: set[str]) -> N
     def complete(*cells: list[dict[str, Any]]) -> bool:
         return all(len(cell) >= EXPECTED_VALID for cell in cells)
 
-    for arm, scenario in REVISION_CELLS:
+    def print_cell(arm: str, scenario: str) -> None:
         mine = [r for r in runs.values() if (r["arm"], r["scenario"]) == (arm, scenario)]
         valid = valid_in(arm, scenario)
         voids = Counter(r["void_kind"] for r in mine if r["void"])
@@ -1561,7 +1601,7 @@ def summarize_revision(runs: dict[str, dict[str, Any]], replaced: set[str]) -> N
                 f" compactions={sum(r['compactions'] for r in valid)}"
                 f" median-compactions={median_compactions(valid):g}"
             )
-            if arm == "slice":
+            if arm in STEP_ARMS:
                 line += (
                     f" followed={sum(r['followed'] for r in valid)} ({100 * pooled_rate(valid):.0f}%)"
                     f" any_step={sum(r['any_step'] for r in valid)}"
@@ -1574,19 +1614,29 @@ def summarize_revision(runs: dict[str, dict[str, Any]], replaced: set[str]) -> N
             line += " incomplete"
         print(line)
 
+    for arm, scenario in REVISION_CELLS:
+        print_cell(arm, scenario)
     baseline, treatment, sentinel = (valid_in(arm, scenario) for arm, scenario in REVISION_CELLS)
-    print("bar 1, slice SDD outcome (at least 8 of 10 valid, and more than baseline-6181's):",
-          bar(None if not complete(treatment, baseline)
-              else count(treatment, "outcome") >= 8
-              and rate(count(treatment, "outcome"), len(treatment)) > rate(count(baseline, "outcome"), len(baseline))))
-    print("bar 2, slice SDD thrash (no valid run with thrash=1):",
-          bar(None if not complete(treatment) else count(treatment, "thrash") == 0))
-    print("bar 3, slice SDD compactions followed (at least 85%, valid runs pooled):",
-          bar(None if not complete(treatment) else pooled_rate(treatment) >= 0.85))
-    print("bar 4, slice SDD median compactions per run (at most 16):",
-          bar(None if not complete(treatment) else median_compactions(treatment) <= 16))
+
+    def print_treatment_bars(arm: str, cell: list[dict[str, Any]]) -> None:
+        print(f"bar 1, {arm} SDD outcome (at least 8 of 10 valid, and more than baseline-6181's):",
+              bar(None if not complete(cell, baseline)
+                  else count(cell, "outcome") >= 8
+                  and rate(count(cell, "outcome"), len(cell))
+                  > rate(count(baseline, "outcome"), len(baseline))))
+        print(f"bar 2, {arm} SDD thrash (no valid run with thrash=1):",
+              bar(None if not complete(cell) else count(cell, "thrash") == 0))
+        print(f"bar 3, {arm} SDD compactions followed (at least 85%, valid runs pooled):",
+              bar(None if not complete(cell) else pooled_rate(cell) >= 0.85))
+        print(f"bar 4, {arm} SDD median compactions per run (at most 16):",
+              bar(None if not complete(cell) else median_compactions(cell) <= 16))
+
+    print_treatment_bars("slice", treatment)
     print("bar 5, sentinel failures (at most 1 of 10):",
           bar(None if not complete(sentinel) else count(sentinel, "failed") <= 1))
+    if controller_pinned or any(r["arm"] == "controller" for r in runs.values()):
+        print_cell("controller", SDD)
+        print_treatment_bars("controller", valid_in("controller", SDD))
 
 
 def main() -> int:
@@ -1594,18 +1644,25 @@ def main() -> int:
     parser.add_argument("--waves-1-2", action="store_true", help="reproduce tally.txt: the old arms' waves 1-2")
     parser.add_argument("--run", help="read one run by id (smoke)")
     # The arm picks the pinned SKILL.md whose cut an old-arm SDD run is read
-    # against, and the revised reading for baseline-6181 and slice.
+    # against, and the revised reading for baseline-6181, slice and controller.
     parser.add_argument("--arm", default="control", choices=(*OLD_ARMS, *REVISION_ARMS), help="arm of --run")
     parser.add_argument("--scenario", choices=SCENARIOS, help="scenario of --run")
     args = parser.parse_args()
     logs = HERE / "logs"
-    if not args.waves_1_2 and (not args.run or args.arm == "slice"):
+    if args.run and args.arm == "controller" and args.scenario != SDD:
+        parser.error(f"--arm controller runs only on {SDD}")
+    if not args.waves_1_2 and (not args.run or args.arm in STEP_ARMS):
         # The revision is never tallied without the step files' line counts:
         # a partial Read would otherwise be judged against no file at all.
-        has_slice = any(LOG_NAME.match(p.stem) for p in logs.glob("slice-*.log"))
-        if (has_slice or args.run) and "slice" not in manifest_pins():
-            print("tally: a slice run needs the slice pin in manifest.tsv to count step-file lines", file=sys.stderr)
-            return 1
+        # A controller log on another scenario is left for collect() to name.
+        step_logs = {"slice": "slice-*.log", "controller": f"controller-{SDD}-*.log"}
+        pins = manifest_pins()
+        for arm in STEP_ARMS:
+            has_log = any(LOG_NAME.match(p.stem) for p in logs.glob(step_logs[arm]))
+            if (has_log or (args.run and args.arm == arm)) and arm not in pins:
+                print(f"tally: a {arm} run needs the {arm} pin in manifest.tsv to count step-file lines",
+                      file=sys.stderr)
+                return 1
         try:
             load_step_lines()
         except ValueError as error:
@@ -1617,7 +1674,11 @@ def main() -> int:
         read_run(args.arm, args.scenario, "p90", args.run)
         return 0
     other: set[str] = set()
-    runs = collect(logs, revision=not args.waves_1_2, skipped=other)
+    try:
+        runs = collect(logs, revision=not args.waves_1_2, skipped=other)
+    except ValueError as error:
+        print(f"tally: {error}", file=sys.stderr)
+        return 1
     try:
         pairs = load_reruns(HERE / "sentinel-reruns.tsv", runs, other)
     except ValueError as error:
@@ -1626,7 +1687,7 @@ def main() -> int:
     if args.waves_1_2:
         summarize(runs, set(pairs))
     else:
-        summarize_revision(runs, set(pairs))
+        summarize_revision(runs, set(pairs), controller_pinned="controller" in manifest_pins())
     return 0
 
 

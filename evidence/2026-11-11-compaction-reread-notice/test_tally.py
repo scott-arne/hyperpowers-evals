@@ -1078,14 +1078,16 @@ SETUP_LINE = f"session {SID}: setup complete"
 
 class StepFollow(unittest.TestCase):
     def setUp(self) -> None:
-        tally.STEP_LINES = {f: 10 for f in tally.STEP_FILES}
+        old = tally.STEP_LINES
+        self.addCleanup(setattr, tally, "STEP_LINES", old)
+        tally.STEP_LINES = {"slice": {f: 10 for f in tally.STEP_FILES}}
 
     def follow(self, after: list[dict], before: list[dict] | None = None) -> dict:
         found = [{"kind": "skill", "skill": "hyperpowers:subagent-driven-development"}]
         if before is None:
             before = [tally.bash_event(f"printf '{SETUP_LINE}\\n' >> /w/progress.md", ok=True, output="")]
         found += before + [{"kind": "compact"}] + after + [{"kind": "dispatch", "class": "implement", "task": 1}]
-        return tally.step_follows(found, SID)
+        return tally.step_follows(found, SID, "slice")
 
     def read(self, name: str) -> dict:
         return {"kind": "read", "path": f"{STEP}/{name}", "offset": None, "limit": None,
@@ -1249,7 +1251,9 @@ class RevisionRuns(unittest.TestCase):
             self.assertEqual(tally.transcript_session(transcripts(record)), "abc-1")
 
 
-class RevisionPlumbing(unittest.TestCase):
+class HereCase(unittest.TestCase):
+    """A test case that points ``tally.HERE`` at a scratch manifest and log directory."""
+
     def with_here(self, manifest: str, logs: dict[str, str]) -> tempfile.TemporaryDirectory[str]:
         tmp = tempfile.TemporaryDirectory()
         here = Path(tmp.name)
@@ -1263,6 +1267,8 @@ class RevisionPlumbing(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         return tmp
 
+
+class RevisionPlumbing(HereCase):
     def test_manifest_pins_reads_the_revision_arms(self) -> None:
         self.with_here("harness\th\ncontrol\tc\nbaseline-6181\tb6\nslice\tsl\nmodel\tm\n", {})
         pins = tally.manifest_pins()
@@ -1361,6 +1367,178 @@ class RevisionSummary(unittest.TestCase):
                 and not line.startswith(("slice ", "baseline-6181 "))]
         # 17 of 20 is exactly 85%; a median of 20 compactions exceeds 16.
         self.assertEqual(bars, ["PASS", "PASS", "PASS", "FAIL", "FAIL"])
+
+
+def controller_bars(lines: list[str]) -> list[str]:
+    """The verdict word of each controller bar line."""
+    return [line.rsplit(" ", 1)[1] for line in lines if line.startswith("bar ") and " controller " in line]
+
+
+def summary_lines(runs: dict[str, dict[str, Any]], controller_pinned: bool = False) -> list[str]:
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        tally.summarize_revision(runs, set(), controller_pinned=controller_pinned)
+    return out.getvalue().splitlines()
+
+
+SLICE_CELLS = {
+    **revision_cell("baseline-6181", SDD, 10, outcome=False, thrash=1, compactions=9, followed=0),
+    **revision_cell("slice", SDD, 10, outcome=True, thrash=0, compactions=20, followed=17,
+                    any_step=17, ledger_parts=17, skill=17),
+    **revision_cell("slice", NOSKILL, 10, failed=False, reads=[]),
+}
+
+
+class ControllerArm(unittest.TestCase):
+    def test_controller_reads_as_slice(self) -> None:
+        entries = [SDD_LOAD, compact(), agent("Implement Task 1: a", "i1"), notif("i1"), compact(), THRASH_ENTRY]
+        slice_row, _ = revision_row("slice", entries)
+        controller_row, line = revision_row("controller", entries)
+        for key in ("valid", "void_kind", "outcome", "thrash", "compactions"):
+            self.assertEqual(controller_row[key], slice_row[key], key)
+        self.assertIn("thrash=1", line)
+        # The controller run line carries the slice per-compaction counts.
+        self.assertIn("followed=", line)
+        self.assertIn("ledger_parts=", line)
+
+    def test_controller_thrash_under_a_grader_void_is_a_valid_failure(self) -> None:
+        entries = [SDD_LOAD, compact(), agent("Implement Task 1: a", "i1"), notif("i1"), compact(), THRASH_ENTRY]
+        row, _ = revision_row(
+            "controller", entries, final="indeterminate", verdict_extra={"gauntlet": {"status": "investigate"}}
+        )
+        self.assertEqual((row["valid"], row["void_kind"], row["thrash"], row["outcome"]), (True, None, 1, False))
+
+    def test_controller_bars(self) -> None:
+        runs = {
+            **SLICE_CELLS,
+            **revision_cell("controller", SDD, 10, outcome=True, thrash=0, compactions=10, followed=9,
+                            any_step=9, ledger_parts=9, skill=9),
+        }
+        lines = summary_lines(runs, controller_pinned=True)
+        self.assertEqual(controller_bars(lines), ["PASS", "PASS", "PASS", "PASS"])
+        (cell,) = [line for line in lines if line.startswith(f"controller {SDD}:")]
+        self.assertIn("followed=90 (90%)", cell)
+        # The controller lines follow the five existing bar lines.
+        bar5 = next(i for i, line in enumerate(lines) if line.startswith("bar 5,"))
+        self.assertLess(bar5, lines.index(cell))
+
+    def test_no_controller_prints_no_controller_lines(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            tally.summarize_revision(SLICE_CELLS, set())
+        self.assertNotIn("controller", out.getvalue())
+
+    def test_pin_alone_prints_an_incomplete_controller_cell(self) -> None:
+        lines = summary_lines(SLICE_CELLS, controller_pinned=True)
+        (cell,) = [line for line in lines if line.startswith(f"controller {SDD}:")]
+        self.assertIn("valid=0", cell)
+        self.assertTrue(cell.endswith(" incomplete"))
+        self.assertEqual(controller_bars(lines), ["incomplete"] * 4)
+
+    def test_controller_rows_without_the_pin_still_print(self) -> None:
+        runs = {**SLICE_CELLS, **revision_cell("controller", SDD, 10, outcome=True, thrash=0, compactions=10,
+                                               followed=9, any_step=9, ledger_parts=9, skill=9)}
+        self.assertEqual(len(controller_bars(summary_lines(runs))), 4)
+
+    def test_nine_valid_controller_runs_read_incomplete(self) -> None:
+        runs = {
+            **SLICE_CELLS,
+            **revision_cell("controller", SDD, 9, outcome=True, thrash=0, compactions=10, followed=10,
+                            any_step=10, ledger_parts=10, skill=10),
+        }
+        lines = summary_lines(runs, controller_pinned=True)
+        (cell,) = [line for line in lines if line.startswith(f"controller {SDD}:")]
+        self.assertIn("valid=9", cell)
+        self.assertTrue(cell.endswith(" incomplete"))
+        self.assertEqual(controller_bars(lines), ["incomplete"] * 4)
+
+    def test_controller_thrash_fails_bar_2(self) -> None:
+        runs = {
+            **SLICE_CELLS,
+            **revision_cell("controller", SDD, 10, outcome=True, thrash=0, compactions=10, followed=10,
+                            any_step=10, ledger_parts=10, skill=10),
+        }
+        runs[f"controller-{SDD}-3"] = {**runs[f"controller-{SDD}-3"], "thrash": 1, "outcome": False}
+        self.assertEqual(controller_bars(summary_lines(runs, controller_pinned=True)),
+                         ["PASS", "FAIL", "PASS", "PASS"])
+
+    def test_log_names(self) -> None:
+        for name in ("controller-sdd-compaction-reread-p1", "controller-sdd-compaction-reread-p10",
+                     "controller-sdd-compaction-reread-r3"):
+            with self.subTest(name=name):
+                match = tally.LOG_NAME.match(name)
+                self.assertIsNotNone(match)
+                assert match is not None
+                self.assertEqual(match.group(1), "controller")
+        for name in ("controller-compaction-no-skill-p1", "controller-sdd-compaction-reread-r4"):
+            with self.subTest(name=name):
+                self.assertIsNone(tally.LOG_NAME.match(name))
+
+
+class ControllerPlumbing(HereCase):
+    def main_code(self) -> tuple[int, str]:
+        old_argv = sys.argv
+        sys.argv = ["tally.py"]
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                code = tally.main()
+        finally:
+            sys.argv = old_argv
+        return code, out.getvalue()
+
+    def test_controller_log_on_another_scenario_is_refused(self) -> None:
+        self.with_here("baseline-6181\tb6\n", {"controller-compaction-no-skill-p1.log": "run-id: x\nDONE\n"})
+        code, text = self.main_code()
+        self.assertEqual(code, 1)
+        self.assertIn("controller-compaction-no-skill-p1.log", text)
+
+    def test_main_refuses_a_controller_log_without_a_controller_pin(self) -> None:
+        self.with_here("baseline-6181\tb6\n", {"controller-sdd-compaction-reread-p1.log": "run-id: x\nDONE\n"})
+        code, text = self.main_code()
+        self.assertEqual(code, 1)
+        self.assertIn("controller pin", text)
+
+    def test_manifest_pins_reads_the_controller_pin(self) -> None:
+        self.with_here("slice\tsl\ncontroller\tct\n", {})
+        self.assertEqual(tally.manifest_pins()["controller"], "ct")
+
+
+class ControllerStepLines(unittest.TestCase):
+    def setUp(self) -> None:
+        old = tally.STEP_LINES
+        self.addCleanup(setattr, tally, "STEP_LINES", old)
+
+    def test_each_arm_reads_its_own_pin(self) -> None:
+        lines_at = {"S": 3, "C": 7}
+        shown: list[str] = []
+
+        def fake_run(argv: list[str], **_: Any) -> Any:
+            pin = argv[-1].split(":", 1)[0]
+            shown.append(pin)
+            return type("Shown", (), {"returncode": 0, "stdout": "x\n" * lines_at[pin], "stderr": ""})()
+
+        old_pins, old_run = tally.manifest_pins, tally.subprocess.run
+        tally.manifest_pins = lambda: {"baseline-6181": "B", "slice": "S", "controller": "C"}
+        tally.subprocess.run = fake_run  # type: ignore[assignment]
+        try:
+            tally.STEP_LINES = {}
+            tally.load_step_lines()
+        finally:
+            tally.manifest_pins, tally.subprocess.run = old_pins, old_run
+        self.assertEqual(set(shown), {"S", "C"})
+        self.assertEqual(tally.STEP_LINES["slice"], {f: 3 for f in tally.STEP_FILES})
+        self.assertEqual(tally.STEP_LINES["controller"], {f: 7 for f in tally.STEP_FILES})
+
+    def test_step_follows_uses_the_arms_counts(self) -> None:
+        tally.STEP_LINES = {"slice": {f: 10 for f in tally.STEP_FILES}, "controller": {f: 5 for f in tally.STEP_FILES}}
+        partial = {"kind": "read", "path": f"{STEP}/setup.md", "offset": 1, "limit": 5, "whole": False,
+                   "via": "read", "persisted": False, "credited": True}
+        found: list[dict[str, Any]] = [
+            {"kind": "skill", "skill": "hyperpowers:subagent-driven-development"}, {"kind": "compact"}, partial,
+        ]
+        self.assertEqual(tally.step_follows(found, SID, "controller")["followed"], 1)
+        self.assertEqual(tally.step_follows(found, SID, "slice")["followed"], 0)
 
 
 if __name__ == "__main__":

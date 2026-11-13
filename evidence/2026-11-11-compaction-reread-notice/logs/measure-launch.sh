@@ -18,8 +18,9 @@
 # `claude` is not CC_PIN, when GAUNTLET_AGENT_MODEL is not GRADER_PIN, or when
 # a git status check fails.
 # Adapted from ../../2026-11-03-cost-reduction-6-16-2/logs/measure-launch.sh;
-# the evidence directory and the arm roots (control, treatment, shipped, and
-# for the 2026-11-12 revision slice and baseline-6181) differ. The grader
+# the evidence directory and the arm roots (control, treatment, shipped, for
+# the 2026-11-12 revision slice and baseline-6181, and for revision 2
+# controller) differ. The grader
 # model is checked and recorded
 # here because stage 1's row logs did not record it: Gauntlet's own default is
 # claude-sonnet-4-6, and stage 1 graded on claude-opus-5-5 only because the
@@ -41,13 +42,19 @@ case "$arm" in
   shipped) root=/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/shipped ;;
   slice) root=/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/slice ;;
   baseline-6181) root=/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/v6181 ;;
-  *) echo "arm must be control, treatment, shipped, slice or baseline-6181" >&2; exit 2 ;;
+  controller) root=/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/controller ;;
+  *) echo "arm must be control, treatment, shipped, slice, baseline-6181 or controller" >&2; exit 2 ;;
 esac
 case "$proc" in p[0-9]|p[0-9][0-9]|r[0-9]|r[0-9][0-9]) ;; *) echo "proc must be p<n> or r<n>" >&2; exit 2 ;; esac
 # The control's p1-p10 are the 2026-11-12 baseline logs, so this launcher only
 # adds its replacements; any other baseline-6181 log would go uncounted.
 if [ "$arm" = baseline-6181 ]; then
   case "$scen-$proc" in sdd-compaction-reread-r[0-9]|sdd-compaction-reread-r[0-9][0-9]) ;; *) echo "baseline-6181 runs only as a replacement (r<n>) on sdd-compaction-reread" >&2; exit 2 ;; esac
+fi
+# Revision 2 has no sentinel wave, and tally.py stops on a controller log for
+# any other scenario, so such a run would be spent for nothing.
+if [ "$arm" = controller ] && [ "$scen" != sdd-compaction-reread ]; then
+  echo "controller runs only on sdd-compaction-reread" >&2; exit 2
 fi
 case "$budget" in default) ;; *) echo "budget must be default" >&2; exit 2 ;; esac
 # A row's log is evidence: a relaunch must be a recorded replacement (r<n>),

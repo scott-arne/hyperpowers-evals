@@ -60,6 +60,12 @@ still a `<pin>` placeholder. `tally.py` reads each SDD run's cut line
 from the arm's pin in `manifest.tsv` (`git show <pin>:skills/subagent-driven-development/SKILL.md`
 in the hyperpowers repository), never from a live checkout.
 
+The `controller` pin row (revision 2, below) is added to `manifest.tsv`
+before its wave, with its detached worktree at
+`/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/controller`.
+`tally.py` reads the `controller` step files' line counts from that pin and
+exits 1 when a `controller` log exists without it.
+
 `launch-all.sh` is copied from `../2026-11-03-cost-reduction-6-16-2/` with the
 `shipped` arm and pin key added; `logs/measure-launch.sh` is adapted from that
 campaign's copy (evidence directory, arm roots). It checks every pin before
@@ -83,6 +89,13 @@ The other waves are the same command with their manifest and `waveN.out`.
 After wave 1, tally; if `SDD control mechanism stop (> 3)` reads `STOP`, the
 campaign stops for a decision. The launcher refuses to start a row whose
 `logs/<arm>-<scenario>-<proc>.log` already exists.
+
+The revision's waves used `manifest-revision-a.tsv` and
+`manifest-revision-b.tsv`. Revision 2's single wave uses
+`manifest-revision-c.tsv`: the pin rows of `manifest.tsv` (the `controller`
+pin row included) plus ten `controller` rows on `sdd-compaction-reread`
+(`p1`-`p10`). The launcher refuses a `controller` run on any other scenario
+(exit 2, `controller runs only on sdd-compaction-reread`).
 
 ## Voids and replacements
 
@@ -168,6 +181,13 @@ Arms:
   `logs/baseline-6181-sdd-compaction-reread-r<n>.log` from `measure-launch.sh`.
 - `slice` on `sdd-compaction-reread` (treatment) and on `compaction-no-skill`
   (sentinel), logs `logs/slice-<scenario>-<proc>.log`.
+- `controller` (revision 2, 2026-11-13; spec decision 13): the integration
+  head after the notice comes out, on `sdd-compaction-reread` only, logs
+  `logs/controller-sdd-compaction-reread-<proc>.log` (`p1`-`p10`, `r1`-`r3`).
+  It is read exactly as the `slice` SDD cell (validity, outcome, thrash,
+  dispatches and the per-compaction counts), with step-file line counts from
+  its own pin. `tally.py` exits 1 on a `controller` log for any other
+  scenario. The `slice` results stand as measured; there is no sentinel wave.
 
 The old arms (`control`, `treatment`, `shipped`) are read only under
 `--waves-1-2`.
@@ -181,7 +201,7 @@ Its logs predate the launcher and carry no scenario in their names, so
 `manifest.tsv` before the campaign; `tally.py` exits 1 when a `slice` log
 exists without it, since it reads each step file's line count from that pin.
 
-SDD validity (both SDD arms; replaces the 6.16.2 window rule): void kinds
+SDD validity (every revision SDD arm; replaces the 6.16.2 window rule): void kinds
 `launch`, `setup`, `grader`, `instrument` (as `void_kind` and the log rules
 read them today) and `no-compaction` (no automatic compaction after the SDD
 skill event). Every other run is valid. Outcome passes when
@@ -196,7 +216,7 @@ event): the state is `step_state` over this session's ledger lines written
 before it; the compaction is followed when, before the next governed action,
 (a) the session made a credited Read covering the step file that state names
 (a whole Read, or Reads whose ranges cover every line of that file at the
-`slice` pin), and (b) when a ledger existed, an `sdd-state board` call
+arm's own pin, `slice` or `controller`), and (b) when a ledger existed, an `sdd-state board` call
 returned a result holding `status=board`, and a `grep` over `progress.md`
 returned a result holding this session's `session <sid>: setup complete` line
 and, when a task is held, at least one `Task <N>:` line of that task. Governed
@@ -205,7 +225,7 @@ ledger (`>>` and `progress.md`) or runs an `sdd-state` subcommand other than
 `board`. An unreadable state (`step_state` returns None) is not followed.
 Bash evidence is read where the call's result arrives: a call with an error
 result writes no ledger lines and earns no recovery credit, but still counts
-as a governed action. Each `slice` SDD run line ends
+as a governed action. Each `slice` and `controller` SDD run line ends
 `compactions=N followed=F any_step=S ledger_parts=L skill=K` (any step file
 read; board and grep both credited; SDD `SKILL.md` read), and the cell line
 pools them over valid runs.
@@ -218,6 +238,18 @@ Bars:
 4. Median `slice` SDD compactions per run at most 16.
 5. Sentinel failures at most 1 of 10.
 
-A cell with fewer than ten valid runs reads `incomplete` and its bars read
+Revision 2 bars, `controller` as the treatment (bars 1-4 of the revised spec;
+a FAIL is a result to report, not a reason to re-run):
+
+1. `controller` SDD outcome at least 8 of 10 valid and more than
+   `baseline-6181`'s.
+2. No valid `controller` SDD run with `thrash=1`.
+3. At least 85% of pooled `controller` SDD compactions followed.
+4. Median `controller` SDD compactions per run at most 16.
+
+`tally.py` prints the `controller` cell line and these four bar lines after
+the five above, once `manifest.tsv` holds a `controller` pin or a
+`controller` run exists; until then its output is unchanged. A cell with
+fewer than ten valid runs reads `incomplete` and its bars read
 `incomplete`. The sentinel is read as before (`noskill_reading`). Replacements
 go in `sentinel-reruns.tsv` as above, at most three per cell (`r1`-`r3`).
