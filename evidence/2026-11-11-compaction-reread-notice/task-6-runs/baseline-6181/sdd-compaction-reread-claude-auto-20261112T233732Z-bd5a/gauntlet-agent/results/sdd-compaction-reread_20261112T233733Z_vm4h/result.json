@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T233733Z_vm4h",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent never started Task 1. It got stuck in a loop: context compacted, it re-read the 1034-line SDD SKILL.md (and plan.md), which refilled the context to the limit, which triggered another compaction. Claude Code then stopped with \"Autocompact is thrashing\" and went back to an idle prompt. No subagents were dispatched, nothing was implemented or committed, and the session never got to the finishing step.",
+  "reasoning": "None of the four criteria were met. Nothing was implemented, no subagents ran, there were no reviews, and the session never reached the finishing step. The controller hit repeated auto-compaction before Task 1. Each compaction made it re-read the large skill file, which filled the context again. Claude Code stopped with a thrashing warning and waited at the prompt without asking anything. The script only lets me answer questions the agent asks, so I could not unblock it without steering.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The SDD controller gets stuck re-reading after compaction. Its rule to re-read SKILL.md in full after compaction (screen: \"Re-reading SKILL.md in full, as required after compaction, then the ledger and git log.\") plus a 1034-line SKILL.md and a 27.6KB plan.md fill the 100k autoCompactWindow almost straight away. The log shows the same Read pair repeated (SKILL.md limit 820, then offset 821) at least 3 times, and 4 compact_boundary entries. Compaction hit before Task 1 even started, not after the first task as the scenario expected."
+    },
+    {
+      "kind": "bug",
+      "description": "Claude Code stopped itself with an \"Autocompact is thrashing\" warning and went idle. It did not tell the user that the plan had not been executed, and it gave no next steps beyond suggesting /clear."
+    },
+    {
+      "kind": "performance",
+      "description": "The SDD SKILL.md is very large (1034 lines). The agent had to read it in two chunks (limit 820, then offset 821) with allow_large, which uses up a lot of context."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed a series of dialogs: theme, security notes, trust-folder (default selection is \"No, exit\"), a \"Newer Opus model available\" prompt even though --model claude-opus-5-5 was passed (it says pinned Opus 5), and the bypass-permissions warning (default is also \"No, exit\"). The model-upgrade prompt looks wrong when the model is already set explicitly. I answered No."
+    },
+    {
+      "kind": "ux",
+      "description": "Before the loop, the agent correctly chose current-branch mode on feature/textstats from the plan text without asking about a worktree. It recorded a baseline of 0 tests / 0 failures."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions exported from src/textstats.js, each with a test file, and npm test passes",
+      "verdict": "fail",
+      "evidence": "`cat src/textstats.js` → `module.exports = {};`. `ls test` → empty. `git log --oneline` stops at the fixture commit `3918961 Add textstats fixture and implementation plan`. `git status --short` → no changes."
+    },
+    {
+      "criterion": "Each task reviewed before the next task starts",
+      "verdict": "fail",
+      "evidence": "No tasks ran. Counting tool calls in session log 77a5ab28…jsonl with jq gives only `9 Bash, 8 Read, 2 Skill`. There are zero Agent/Task calls, so no implementer or reviewer subagents were dispatched."
+    },
+    {
+      "criterion": "Final whole-branch review after the last task",
+      "verdict": "fail",
+      "evidence": "The same tool-call count shows no Agent/Task calls, so no final review happened. The session stopped before Task 1."
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "fail",
+      "evidence": "The final screen shows a yellow warning: \"Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row...\", then \"Baked for 3m 36s · done 3:41 PM\" and an idle prompt with \"0% until auto-compact\". The finishing skill was never loaded (only the subagent-driven-development and using-git-worktrees skills were)."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 301186,
+  "usage": {
+    "inputTokens": 52,
+    "outputTokens": 4088,
+    "cacheCreationInputTokens": 24444,
+    "cacheReadInputTokens": 304833,
+    "turns": 23
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

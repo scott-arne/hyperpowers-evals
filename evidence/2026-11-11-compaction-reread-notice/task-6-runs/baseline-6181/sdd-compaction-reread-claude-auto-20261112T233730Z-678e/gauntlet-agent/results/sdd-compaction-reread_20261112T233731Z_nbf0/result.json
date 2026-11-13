@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T233731Z_nbf0",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller never finished Task 1. Context compaction hit during setup, before any task started. After each compaction the controller re-read the whole 76 KB SDD SKILL.md and the 27 KB plan.md, which filled its context again right away. After 4 compactions Claude Code stopped the run with \"Autocompact is thrashing\". No subagent was dispatched, nothing was implemented or committed, and the session went back to an idle prompt.",
+  "reasoning": "None of the four acceptance criteria were met. Compaction came earlier than the scenario expected: during setup, not after the first task. After every compaction the controller re-read the full skill file and plan, which filled its context again within 1–4 tool calls. That loop shut the session down for good. The controller asked no questions, so the only message I sent was the opening prompt, and the scenario allowed no other steering. Claude Code itself ended the session, so this is a clear failure of keeping the task loop going after compaction.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Compaction thrash loop: the log has 4 compact_boundary entries. After each one the controller re-read SKILL.md (76,445 bytes) in large chunks (offset 1 limit 820, then offset 821) and/or ran `cat plan.md` (27,595 bytes). That filled the 100k autoCompactWindow again within a few turns, and Claude Code stopped the run with 'Autocompact is thrashing'. Re-reading everything after compaction is self-defeating when the files are this large."
+    },
+    {
+      "kind": "bug",
+      "description": "Compaction happened during setup, before Task 1: after the sdd-state sync, the worktree skill load, and a Bash call that printf'd a long passage. The pre-compaction context had already passed about 65k cache-read tokens. The first Skill load plus `cat plan.md` plus listing the skill directory used up most of the window."
+    },
+    {
+      "kind": "ux",
+      "description": "After the thrash warning the agent just goes idle at the prompt, with no plan for recovery and no question to the user. A user could easily miss that nothing was done."
+    },
+    {
+      "kind": "ux",
+      "description": "The screen shows the 'Skills restored (...)' / 'Referenced file plan.md' block 4 times in a row, which makes the compaction loop visible but noisy."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup friction: on both the trust-folder and bypass-permissions dialogs, 'No, exit' is the default. Claude Code also showed a 'Newer Opus model available' prompt saying 'Currently pinned: Opus 5', even though the launcher passes --model claude-opus-5-5. I chose 'No', and the header still showed Opus 5.5."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js with test files, and npm test passes",
+      "verdict": "fail",
+      "evidence": "`git log --oneline` in the workdir shows only fixture commits, newest 'b9494dd Add textstats fixture and implementation plan'. `git status --short` is empty, and `ls test` shows an empty test/ directory. Nothing was implemented."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "fail",
+      "evidence": "No task started. Listing the tool_use calls in session log c6f68ae7-....jsonl shows only Skill, Bash and Read calls and no Agent dispatches (no implementer or reviewer subagents). progress.md holds only the session/plan header lines and no task entries."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "fail",
+      "evidence": "The last task was never reached. The final log entry is the assistant message 'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row...' followed by turn_duration. There is no review dispatch anywhere in the log."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "fail",
+      "evidence": "The session ended on Claude Code's thrashing warning ('Worked for 3m 50s', idle prompt, '0% until auto-compact'), not in the finishing step. The controller never asked about merging, pushing, keeping or discarding the branch."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 309943,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 4332,
+    "cacheCreationInputTokens": 33951,
+    "cacheReadInputTokens": 321679,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

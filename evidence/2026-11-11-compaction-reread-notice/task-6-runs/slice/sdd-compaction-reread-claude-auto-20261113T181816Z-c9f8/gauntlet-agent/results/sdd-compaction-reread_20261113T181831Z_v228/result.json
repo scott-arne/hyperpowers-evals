@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T181831Z_v228",
+  "scenario": "sdd-compaction-reread",
+  "summary": "Claude ran plan.md end to end with subagent-driven development: four implement/review pairs, a final whole-branch review, then the finishing step. The conversation compacted many times along the way (16 compact_boundary entries in the log, the first one during Task 1). The controller kept its task loop each time: after compaction it re-read task-loop.md, review-and-complete.md and implementer-prompt.md, and its skills were restored. All four functions are exported, there are four test files, and npm test passes 79/79.",
+  "reasoning": "All four acceptance criteria are backed by the session log, git history, the ledger file and a fresh npm test run. The controller kept its implement → review → next-task loop through repeated compactions, ran a final review, and ended in the finishing skill.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "After I chose 'Keep the branch as-is', the agent left the checkout as a detached HEAD at f83703a instead of on feature/textstats (git branch shows '* (HEAD detached at f83703a)'). It did say so, but a user who asked to keep the branch would probably expect to still be on it."
+    },
+    {
+      "kind": "ux",
+      "description": "Partway through, the agent paused to ask about the plan's tests: whether to add the missing tests, follow the plan verbatim, or follow it but drop the unused constants. I answered 'Proceed as you recommend.' using the 'Type something' option. It added tests, so the suite has 79 tests instead of the plan's 32. That is reasonable, but it means the agent changed the plan's test contents."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent created and left a local 'hyperpowers/state' branch in the user's repo and offered to push it. That may surprise users."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the folder-trust and bypass-permissions prompts default to 'No, exit'. There was also a 'Newer Opus model available' prompt even though the launcher already passes --model claude-opus-5-5 and the header shows Opus 5.5. I declined the update to avoid a restart."
+    },
+    {
+      "kind": "performance",
+      "description": "Compaction happened very often (16 compact_boundary entries over about 24 minutes) because of the small compaction window. The run still finished in about 24.5 minutes, and the screen showed a re-read of the skill files after compaction."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains readingTimeMinutes.test.js, sentenceCount.test.js, topWords.test.js and wordCount.test.js. npm test: `ℹ tests 79 ℹ pass 79 ℹ fail 0`. git log shows cc95668 feat: add wordCount, 5a0ef49 sentenceCount, f3367f2 topWords, f83703a readingTimeMinutes."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in the session log, in order: 18:23:25 Implement Task 1 → 18:25:01 Review Task 1 → 18:28:01 Implement Task 2 → 18:29:17 Review Task 2 → 18:31:15 Implement Task 3 → 18:32:50 Review Task 3 → 18:35:24 Implement Task 4 → 18:37:45 Review Task 4. Ledger receipts/.../progress.md has a 'Task N: review approved ...' line followed by 'Task N: complete' for each of N=1..4."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Session log: 18:40:28 Agent 'Final whole-branch review', which is after Review Task 4. Ledger: 'Final: review approved a77b856678b64580b (opus) 0 Critical/Important/new Minor; ... npm test 79/79'."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "18:42:27 Skill hyperpowers:finishing-a-development-branch. The screen showed 'Implementation complete. What would you like to do? 1. Merge ... 2. Push ... 3. Keep the branch as-is'. I replied 'Keep the branch as-is', and the agent answered 'I've left feature/textstats as it is, at f83703a... Nothing was merged or pushed.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 1673102,
+  "usage": {
+    "inputTokens": 84,
+    "outputTokens": 6106,
+    "cacheCreationInputTokens": 36834,
+    "cacheReadInputTokens": 837093,
+    "turns": 38
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

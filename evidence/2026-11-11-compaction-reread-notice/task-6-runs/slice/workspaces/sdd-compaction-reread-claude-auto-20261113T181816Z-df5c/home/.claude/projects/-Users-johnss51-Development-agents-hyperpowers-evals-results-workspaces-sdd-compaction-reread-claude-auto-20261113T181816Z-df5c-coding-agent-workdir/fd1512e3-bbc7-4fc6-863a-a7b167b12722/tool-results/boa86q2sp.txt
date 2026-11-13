@@ -1,0 +1,906 @@
+## Setup
+
+Part of [SKILL.md](SKILL.md); the rules there hold in this step.
+
+Read before you settle: run the `sync` and `sdd-dir` steps below and read
+the ledger's plan line, if the ledger exists (reading it changes nothing).
+Then settle where the work happens: use hyperpowers:using-git-worktrees,
+which detects an existing worktree or asks your human partner to choose
+between staying on the current branch, a new branch in place, and a
+worktree, and reports the mode. When the plan line names an integration
+branch, this is a later session of a running plan: hand using-git-worktrees
+that branch and your session id. Never start implementation on a main/master
+branch unless your human partner chose "stay on the current branch" in that
+question; that answer is the consent, and the dossier no longer depends on
+the branch.
+
+Track progress in a ledger file, not only in todos: in real sessions,
+controllers that lost their place have re-dispatched entire completed task
+sequences, the single most expensive failure observed.
+
+- Each plan owns a workspace: at skill start, run `scripts/sdd-state sync PLAN_FILE`
+  (it fetches the repository's state branch; outcomes below), then this
+  skill's `scripts/sdd-dir PLAN_FILE` — it prints the plan's workspace
+  inside the repository's state checkout under the user cache
+  (`${XDG_CACHE_HOME:-~/.cache}/hyperpowers/state/<key>/plans/<plan-slug>-<hash8>/`,
+  one checkout per clone, shared by every worktree of it), home to every
+  artifact for THIS plan: ledger, briefs, reports, review packages, claims,
+  tier-skip summary. The ledger, reports, notes and claims are committed to
+  the orphan branch `hyperpowers/state` by `scripts/sdd-state snapshot PLAN_FILE`
+  and travel between hosts with that branch; briefs and review packages are
+  ignored there and regenerate. The cache is off any protected path, so
+  writing there never triggers a permission prompt, and it is outside the
+  working tree, so it can never be committed with the code. Another plan's
+  directory is never yours to read or write. When `sdd-dir` reports
+  `backend=plain` on stderr, the state branch is unavailable on this host
+  and the dossier will not travel from it: tell your human partner once and
+  continue.
+- `sdd-state sync` outcomes: `up-to-date`, `fast-forwarded`, `merged`,
+  `ahead`, `created`, `absent`, `no-remote`, `assumed-absent`, `plain`:
+  continue. `offline` (exit 1): continue on the local checkout and, as soon
+  as the ledger exists (the next bullet), append
+  `state: sync offline at <time>` to it. `offline-no-state` (exit 1), or
+  `needs-sync` from `sdd-dir`: stop; this host has no dossier and cannot
+  learn whether the remote holds one. Ask your human partner to get online,
+  or to confirm `scripts/sdd-state sync --assume-absent PLAN_FILE` when they
+  know no remote dossier exists. `diverged` (exit 3): stop and present both
+  tips and the printed `merge=` command as a question in the Deciding
+  Together shape; never merge on your own. `busy` (exit 3): retry `sync`
+  once after the other session's writes settle, then ask.
+  `foreign` (exit 2): the branch at the state name is not a hyperpowers
+  state branch; stop, relay the stderr remedy (set git config
+  `hyperpowers.stateBranch` to another name), and ask.
+  `remote-finished plans=<ws,...>` (exit 3): another host finished a plan
+  whose workspace on this host holds ledger lines that are not on the
+  branch. When the list names this plan's workspace, stop, show your human
+  partner the lines this host added (the ledger's tail beyond the last
+  snapshot), and ask whether to snapshot them (then `sync` again, which
+  reports `diverged` for their merge) or to discard them. A workspace in
+  the list that is not this plan's belongs to another plan: report its
+  name and stop without reading or changing it.
+  Any other status, `status=error` (exit 2) among them, stops the run until
+  `sync` succeeds; show its stderr line.
+- Check for this plan's ledger at `<workspace>/progress.md` — this plan's
+  workspace only, never a sibling's. The workspace is the plan's identity:
+  `scripts/sdd-dir` maps a plan to ONE directory whatever path form you
+  hand it, so a ledger sitting in YOUR workspace is this plan's progress
+  even when its first line records the path in another form. Compare
+  repo-relative paths: reduce the plan you were handed to its path relative
+  to the plan repository's toplevel; a line holding an absolute path matches
+  when it lies inside this repository and reduces to the same relative path,
+  or, when it names a path that does not exist on this host (a ledger
+  written on another machine), when it ends with that relative path. Tasks
+  with a `Task <N>: complete` line are done (SKILL.md, Rules for every
+  step); resume at the first task without one. A
+  task whose newest line is a `fix round` line, or a blocking `review`
+  line after one, is mid-loop: resume the loop at the next round; a round
+  whose `review` line approves goes on to the gate. A task whose last
+  line is its implementer identity is a
+  dispatch in flight: do not re-dispatch — reconcile that agent first
+  (list your live children, chase its report), resume it by the recorded
+  id where your harness allows, and only if it cannot be recovered
+  dispatch a takeover, recording the takeover's identity beside the
+  original. The scan only reads: every action it calls for (a resume, a
+  takeover, the next task) waits until `verify` below has returned `ok`.
+  A first line that resolves to a genuinely different plan
+  file means this workspace is corrupt, not that you wandered into a
+  sibling's: stop and surface it to your human partner rather than
+  starting fresh on top of another plan's state.
+- When there is no ledger, create it with its identity as the first line,
+  `# SDD ledger — plan: <repo-relative plan path>` (never an absolute path:
+  the ledger travels between hosts), through a no-clobber write so two
+  sessions that both saw no ledger cannot overwrite each other:
+  `( set -o noclobber; printf '# SDD ledger — plan: %s\n' <repo-relative plan path> > <workspace>/progress.md )`.
+  When that write fails because the file now exists, another session
+  created it first: continue as if you had found it. Whether you created
+  it or found one, append your session line (with `>>`, never a rewrite):
+  `session <sid>: mode <current-branch|new-branch|worktree> on <task branch or detached> integrating <integration branch> at <toplevel> started <UTC time>`,
+  where `<sid>` is `$CLAUDE_CODE_SESSION_ID` on Claude Code and, on a harness
+  without one, a value you generate once as `$(date -u +%s)-$RANDOM$RANDOM`,
+  and the mode is what using-git-worktrees reported. Append a fresh session
+  line whenever you move to a new task branch or detach; your newest line is
+  your location. When your human partner assigned this session specific
+  tasks, add `session <sid>: tasks <N,M,...>`. Then, once registered (the
+  next bullet), run `scripts/sdd-state verify PLAN_FILE` (on a found ledger
+  this is the check that this host holds the code it relies on): `ok` continues;
+  anything else stops Setup until `verify` passes again. `code-missing`
+  names commits the ledger relies on that this checkout lacks, so ask your
+  human partner to pull the named branch; `wrong-repo` names the repository
+  the ledger was handed off from, so ask which checkout this work belongs
+  in; `plan-stale` names the plan repository branch to pull, and you read
+  the plan again after that pull.
+- Register the plan before anything else is claimed:
+  `scripts/sdd-state register PLAN_FILE --session <sid> --integration <branch>`,
+  where `<branch>` is the branch the branch choice produced (the plan's
+  integration branch; later sessions read it from the ledger's plan line and
+  pass the same). `registered` continues; `wrong-branch` means this plan is
+  already running on another integration branch: switch to it or ask;
+  `spec-branch-mismatch` means a sibling plan of this spec runs on another
+  branch: use that branch; `branch-closing` means the plan's branch is being
+  merged and deleted: wait for your human partner; `detached-head` (exit 11)
+  means a first registration found the repository the line names on a
+  detached HEAD, as a host-managed workspace can be, and the plan ref is
+  named after a branch: ask your human partner for the branch to create
+  (the integration branch itself when plan and code share one repository),
+  create it in place with `git -C <the repository the line names> switch -c <name>`,
+  and register again. Any other status stops Setup until `register`
+  succeeds; show its stderr line. A later session of a
+  running plan starts its worktree detached at the integration head
+  (using-git-worktrees says how) and never checks the integration branch
+  out; a later session (the ledger already has a plan line naming the
+  integration branch) that is not already detached at that branch's head
+  runs `git switch --detach <branch>` before `register`, whatever mode
+  using-git-worktrees reported (an existing worktree, a native tool's
+  worktree, or work in place); a worktree that skill created detached is
+  already there. Before that detach, and before any claim, a later session
+  compares `git rev-parse --show-toplevel` with the `at <toplevel>` of every
+  other session's newest session line: a match means you are inside another
+  session's worktree (a native tool can resume one under the same name), so
+  do not detach, switch or claim there. Leave it, create your own worktree
+  with a name that carries your session id (using-git-worktrees, Detaching a
+  later session), append a fresh session line from it, and detach that one.
+  When the plan file lives in another repository
+  than the code, pass `--code-repo <code toplevel>` to every `sdd-state`
+  call; an omitted option means the current repository, and a wrong one is
+  `wrong-repo`.
+- Quote the graph in the ledger: run `scripts/sdd-state deps PLAN_FILE` and
+  append its lines after the scan table. The scan's conflict rows include
+  `scripts/sdd-state deps --check PLAN_FILE --ledger <workspace>/progress.md`'s
+  lines: each `conflict tasks=A,B ...` is a row for your human partner, settled
+  by an amendment (`scripts/sdd-state amend PLAN_FILE --from <edited copy>
+  --base <plan= blob> --message <subject>`, with `--accept 'tasks=A,B path=<p>'`
+  when they accept the overlap; the edited copy is a file outside the
+  checkout's plan path, a copy in the plan's workspace, never the checked-out
+  plan file itself, which `amend` refuses) and never by editing the plan in
+  the worktree alone, because the plan ref is what every session reads.
+- The ledger is your recovery map: the commits it names exist in git even
+  when your context no longer remembers creating them.
+- The workspace is scratch for the working tree and a record on the branch:
+  the Finish step removes the plan's directory through
+  `scripts/sdd-state finish PLAN_FILE --session <sid>`, and the branch history keeps it, so
+  an evidence note can cite `git show <sha>:plans/<ws>/<file>`. Nothing
+  inside the checkout is reclaimed automatically; `scripts/sdd-state prune --repo <dir>`
+  lists and removes idle plan directories only when asked. Snapshot the
+  workspace (`scripts/sdd-state snapshot PLAN_FILE`) after the pre-flight
+  scan table and before the final review; `scripts/sdd-state complete`
+  snapshots after every completion line it writes, so a hand-off or a crash
+  loses at most the task in flight. The completion's durable record is the
+  snapshot `complete` takes, so that helper's status line decides whether
+  you go on: `status=complete` continues, `busy` and `error` are retried,
+  and every other status stops. A snapshot you run by hand answers
+  `snapshot` (or `plain`, where no state branch exists), which continues;
+  `none` means what you just wrote is not in the workspace the helper sees,
+  and `error` (exit 2) means the commit or the ref update failed; both stop
+  until the snapshot succeeds.
+  When your human partner asks to
+  hand the run to another host, run `scripts/sdd-state handoff PLAN_FILE --push`
+  (the only time the state branch is pushed, never on your own initiative),
+  report its status line, relay `plan-not-committed` with the commands to
+  commit the plan, relay `code-dirty` with the listed paths as a question
+  (only an explicit yes passes `--code-dirty-ok`), relay `detached-head`
+  by asking for a branch name and creating it in the repository the line
+  names (`repo=code` or `repo=plan`: `git -C <that repository> switch -c <name>`)
+  before retrying, relay `shallow-source` (exit 12) the same way (a full
+  clone, or `git -C <that repository> fetch --unshallow`, since a shallow
+  code or plan repository cannot record a root), and stop on `plain`
+  (exit 7: this host has no state branch, so there is no dossier to push),
+  `scan-failed` (exit 5: the pre-push scan named in `hyperpowers.prePushScan`
+  rejected the range; show its output and ask) and `push-failed` (exit 1:
+  the remote moved or could not be reached; run `sync` first, then retry):
+  none of them is a hand-off, so report nothing as ready to pull.
+  `snapshot ... push=none` (exit 0) is no hand-off either: the plan
+  repository has no remote, so the record is committed on this host and
+  nothing left it; report it as a local snapshot and ask your human partner
+  for a remote if the dossier has to travel. On
+  `pushed`, list the branches named in `code=` and, when present, `plan=`
+  for your human partner to push here and pull there. You push none of
+  them unless asked.
+
+Read the plan once, note its context and Global Constraints, and create a
+todo per task where your harness surfaces todos — the ledger is the
+progress record either way; todos mirror it, never replace it. Read the
+plan's `**Spec:**` header and the spec file it names: the spec is the
+binding authority the plan argues from, and conflicts inside the plan
+resolve against it. A plan whose spec is `none` or unreachable gets a
+ledger line saying so — without a spec, a conflict has no tiebreaker but
+your human partner.
+
+When the plan has a spec, dry-run the decision compiler over it now:
+`bash <finishing skill's directory>/scripts/decisions-compile <spec> --dry-run`
+(the finishing-a-development-branch skill, `../finishing-a-development-branch/`
+relative to this one). Exit 0 confirms the spec's `## Decisions` list parses;
+its numbered listing goes into the ledger under a `Decisions listing:` line
+for the extractor's dispatch. Exit 2 for a missing list is the legacy-spec
+case: draft the list from the spec's own text, one item per decision it
+states, show it to your human partner, and write it into the spec once they
+approve it, committing that edit on the branch. Any other exit 2 names what
+to fix first (a spec that is not committed, or a `Supersedes:` problem) to
+resolve with them the same way. After any repair, run the dry run again
+until it exits 0, and only then write its numbered listing into the ledger.
+The session is at its start, so this costs no cycle time. When the plan has
+no spec (`none`, or unreachable, per the ledger line above), write
+`Decisions: none (no spec)` in the ledger and skip the listing, the
+extractor and the spec in the hand-off: finishing then takes its test-only
+path.
+
+Before dispatching Task 1, scan the plan once for conflicts, writing down
+what you checked as you check it:
+
+- tasks that contradict each other or the plan's Global Constraints
+- anything the plan explicitly mandates that the review rubric treats as a
+  defect (a test that asserts nothing, verbatim duplication of a logic block)
+
+The scan's output is a table, not a verdict. One row for every pair of tasks
+that share a file or an interface: the two tasks, what one produces against
+what the other consumes, and what you found. One row for every task: whether
+its own text agrees with itself — the tests it specifies against the code it
+specifies, the files it creates against the files it later touches. "The scan
+is clean" without those rows is not a scan you ran.
+
+Write the table to the ledger. Then present everything it surfaced to your
+human partner as ONE batched question — each finding beside the plan text
+that mandates it, asking which governs — before execution begins, not one
+interrupt per discovery mid-plan. Each finding is a decision with
+consequences downstream, so it gets the shape the brainstorming skill's
+Deciding Together section describes: the conflict and what each resolution
+costs in chat, then the selection widget to collect the answers. If the scan
+is clean, proceed without comment. The review loop remains the net for
+conflicts that only emerge from implementation.
+
+Setup's last action: append `session <sid>: setup complete` to the ledger (a
+later session writes its own). The step table in SKILL.md reads it to tell a
+compaction during Setup from one after it.
+README.md
+package.json
+plan.md
+src
+test
+# Textstats Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use hyperpowers:subagent-driven-development (recommended) or hyperpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Spec:** none (fixture)
+
+**Goal:** Build `textstats`, a small dependency-free Node.js module that reports four statistics about a piece of English prose: the number of words, the number of sentences, the most frequent words, and an estimated reading time.
+
+**Architecture:** One CommonJS module, `src/textstats.js`, exports four pure functions. A private `tokenize` helper (added in Task 1) is the single definition of what a "word" is; `wordCount`, `topWords` and `readingTimeMinutes` all build on it so the three numbers can never disagree about the text. `sentenceCount` (Task 2) uses its own terminator scan and borrows `tokenize` only to decide whether a segment holds any words at all. Every function validates its arguments and throws a `TypeError` or `RangeError` with a message naming the function, rather than returning a silent wrong answer. Each function has its own test file under `test/`, so a failing statistic points at one file.
+
+**Tech Stack:** Node.js 20 (`node:test`, `node:assert/strict`), CommonJS modules, no runtime or dev dependencies. The suite runs with `npm test`, which is `node --test`.
+
+## Conventions
+
+These apply to every task below. They are written down once so each task can stay short on process and long on content.
+
+- **Module format.** CommonJS (`require` / `module.exports`). `package.json` has no `type` field, and this plan never adds one.
+- **Test files.** One file per function, named `test/<functionName>.test.js`, using `const { test } = require('node:test');` and `const assert = require('node:assert/strict');`. Test names are full sentences in the present tense that say what the function does ("counts hyphenated compounds as one word"), never "test 1".
+- **Red before green.** Every task writes its test file first, runs `npm test`, and sees it fail for the stated reason before any implementation is written. A test that has never failed has not shown that it can.
+- **Argument validation.** Text arguments must be strings. A non-string throws `TypeError` whose message starts with the function name and a colon. Numeric arguments that are out of range throw `RangeError` with the same prefix. Tests assert on the error class and on the message prefix, never on the full message text.
+- **No state.** None of the functions mutates its arguments, caches results, or reads anything from the environment. Calling a function twice with the same arguments returns equal values.
+- **Commits.** One commit per task, conventional prefix `feat:`, message in the imperative, and the test file and implementation in the same commit. Do not commit while `npm test` is red.
+- **Scope.** English prose only. Right-to-left scripts, languages without spaces between words, and markup stripping are out of scope; the notes in each task name the specific cases that are deliberately left alone.
+
+## File Structure
+
+| Path | Responsibility | Created in |
+| --- | --- | --- |
+| `src/textstats.js` | The module: `tokenize` (private), `wordCount`, `sentenceCount`, `topWords`, `readingTimeMinutes` | Task 1, extended by Tasks 2-4 |
+| `test/wordCount.test.js` | Tests for `wordCount` and, through it, the tokenizer rules | Task 1 |
+| `test/sentenceCount.test.js` | Tests for `sentenceCount` | Task 2 |
+| `test/topWords.test.js` | Tests for `topWords` | Task 3 |
+| `test/readingTimeMinutes.test.js` | Tests for `readingTimeMinutes` | Task 4 |
+| `package.json` | Name, version, `npm test` script (already committed) | before Task 1 |
+
+The repository already contains `package.json`, an empty module (`module.exports = {};` in `src/textstats.js`) and an empty `test/` directory. Work happens on the current branch.
+
+## Task Dependency Order
+
+Tasks run in order. Task 1 introduces `tokenize`, which Task 2 (the "does this segment hold a word" test), Task 3 (the word list) and Task 4 (via `wordCount`) all rely on. Task 4 depends on `wordCount` directly. No task edits the tests of an earlier task, and no task rewrites the code of an earlier task: each one only appends a function and widens the export line.
+
+### Task 1: `wordCount(text)`
+
+**Files:**
+- Create: `test/wordCount.test.js`
+- Modify: `src/textstats.js`
+
+`wordCount` is the foundation of the module. It also introduces the private `tokenize` helper and the `assertText` argument check that the later tasks reuse, so the rules decided here (what a "word" is, what counts as a joiner) bind every later statistic.
+
+**Behaviour.**
+
+- A word is a maximal run of Unicode letters or digits (`\p{L}`, `\p{N}`), in any script.
+- A single straight (`'`) or typographic (`’`) apostrophe, or a single hyphen, joins two runs into one word, but only when a letter or digit sits on both sides. `don't`, `keeper’s` and `well-known` are one word each. `well-` and `dogs'` are the words `well` and `dogs`, with the stray joiner dropped.
+- Everything else separates words: whitespace, sentence punctuation, em and en dashes, slashes, underscores, and the point in a decimal number or domain name. `3.14` is two words (`3` and `14`) and `example.com` is two (`example` and `com`).
+- A string with no letters or digits has zero words, however long it is.
+- A non-string argument throws `TypeError` with a message starting `wordCount:`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/wordCount.test.js`:
+
+```javascript
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { wordCount } = require('../src/textstats');
+
+// A passage whose word count was established independently with `wc -w`:
+// it has no standalone punctuation and no hyphenated or apostrophe words, so
+// whitespace-separated tokens and words coincide.
+const PASSAGE = [
+  'The lighthouse keeper climbed the spiral stairs every evening, counting',
+  'each step as his father had taught him. There were one hundred and twelve,',
+  'and on stormy nights the number never seemed to change, though his legs',
+  'insisted otherwise. At the top he trimmed the wick, polished the great lens,',
+  'and watched the beam sweep across the water toward ships he would never meet.',
+].join('\n');
+
+const CASES = [
+  ["", 0],
+  [" ", 0],
+  ["a", 1],
+  ["A", 1],
+  ["I", 1],
+  ["a b", 2],
+  ["a  b", 2],
+  ["a\tb", 2],
+];
+
+test('returns 0 for the empty string', () => {
+  assert.equal(wordCount(''), 0);
+});
+
+test('returns 0 for a string of only whitespace', () => {
+  assert.equal(wordCount('   \t\n  \r\n '), 0);
+});
+
+test('returns 1 for a single word', () => {
+  assert.equal(wordCount('hello'), 1);
+});
+
+test('counts words separated by single spaces', () => {
+  assert.equal(wordCount('the quick brown fox'), 4);
+});
+
+test('ignores leading, trailing and repeated whitespace', () => {
+  assert.equal(wordCount('   the   quick \t brown\n\nfox   '), 4);
+});
+
+test('treats newlines and tabs as separators', () => {
+  assert.equal(wordCount('one\ntwo\tthree\r\nfour'), 4);
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 42, {}, [], ['a b']]) {
+    assert.throws(() => wordCount(bad), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('wordCount:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, expected] of CASES) {
+    assert.equal(wordCount(text), expected, JSON.stringify(text));
+  }
+});
+```
+
+The file ends with a table-driven test over the reference rows. The expected numbers were worked out by hand from the rules above, not copied from the implementation's output.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test`
+
+Expected: the run fails. Every test in `test/wordCount.test.js` reports `TypeError: wordCount is not a function`, because `src/textstats.js` still exports an empty object. If the failure is anything else (a syntax error in the test file, a missing module), fix the test file and run again before moving on.
+
+- [ ] **Step 3: Write the implementation**
+
+Replace the line `module.exports = {};` in `src/textstats.js` with the following. The file is otherwise empty at this point, so this is the whole file.
+
+```javascript
+// A word is a run of letters or digits (any script), optionally joined to the
+// next run by a single apostrophe (straight or typographic) or hyphen. The
+// joiners are only part of a word when letters or digits sit on both sides, so
+// a trailing "well-" or "dogs'" loses its joiner. Everything else, including
+// em dashes, periods and underscores, separates words.
+const WORD_PATTERN = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
+
+function assertText(fn, value) {
+  if (typeof value !== 'string') {
+    throw new TypeError(`${fn}: text must be a string, received ${value === null ? 'null' : typeof value}`);
+  }
+}
+
+// Private: the single definition of "word" shared by every statistic below.
+function tokenize(text) {
+  return text.match(WORD_PATTERN) ?? [];
+}
+
+/**
+ * Count the words in a piece of text.
+ *
+ * @param {string} text
+ * @returns {number}
+ */
+function wordCount(text) {
+  assertText('wordCount', text);
+  return tokenize(text).length;
+}
+
+module.exports = { wordCount };
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `npm test`
+
+Expected: all 8 tests pass and the summary shows `fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/textstats.js test/wordCount.test.js
+git commit -m "feat: add wordCount"
+```
+
+### Task 2: `sentenceCount(text)`
+
+**Files:**
+- Create: `test/sentenceCount.test.js`
+- Modify: `src/textstats.js`
+
+`sentenceCount` splits prose at sentence terminators while avoiding the three most common false breaks: decimal numbers, dotted names such as `example.com`, and abbreviations like `Mr.` and `e.g.`. It reuses `tokenize` and `assertText` from Task 1 and appends to `src/textstats.js` without changing anything already there.
+
+**Behaviour.**
+
+- A terminator is a run of `.`, `!` or `?` (so `?!` and `...` are one terminator), optionally followed by closing quotes or brackets, and only when whitespace or the end of the text follows it. A period inside `3.14`, `example.com` or `a.b.c` has no whitespace after it and is not a terminator.
+- A lone `.` that follows one of the listed abbreviations (`Mr`, `Mrs`, `Ms`, `Dr`, `Prof`, `St`, `Sr`, `Jr`, `vs`, `e.g`, `i.e`, compared without regard to case) does not end a sentence. Runs such as `...` or `?!` always do.
+- A sentence is counted only if it contains at least one word, so a text made only of terminators has zero sentences.
+- Text after the last terminator counts as a final sentence when it contains a word.
+- A non-string argument throws `TypeError` with a message starting `sentenceCount:`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/sentenceCount.test.js`:
+
+```javascript
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { sentenceCount } = require('../src/textstats');
+
+// Eight sentences, counted by hand: the question and the exclamation each end
+// one, while the "Mr." and "Dr." titles and the decimal inside the fourth
+// sentence must not.
+const PASSAGE = [
+  'Mr. Alder opened the shop at nine. Nobody came in until noon! When the first',
+  'customer arrived, Dr. Wren asked whether the prices had changed. They had',
+  'risen by 3.5 percent since spring. "Is that all?" she said. He nodded, and',
+  'the afternoon went by quietly. By closing time the till held forty dollars.',
+].join('\n');
+
+const CASES = [
+  ["", 0],
+  [" ", 0],
+  [".", 0],
+  ["a", 1],
+  ["a.", 1],
+  ["a. b.", 2],
+  ["a! b? c.", 3],
+  ["a!? b", 2],
+];
+
+test('returns 0 for the empty string', () => {
+  assert.equal(sentenceCount(''), 0);
+});
+
+test('returns 0 for whitespace only', () => {
+  assert.equal(sentenceCount('  \n\t  '), 0);
+});
+
+test('returns 0 for terminators with no words', () => {
+  assert.equal(sentenceCount('... ?! . ! ?'), 0);
+});
+
+test('counts one sentence with a final period', () => {
+  assert.equal(sentenceCount('The tide came in.'), 1);
+});
+
+test('counts one sentence with no terminator at all', () => {
+  assert.equal(sentenceCount('The tide came in'), 1);
+});
+
+test('counts a trailing fragment after the last terminator', () => {
+  assert.equal(sentenceCount('The tide came in. Then it left'), 2);
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 7, {}, ['One.']]) {
+    assert.throws(() => sentenceCount(bad), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('sentenceCount:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, expected] of CASES) {
+    assert.equal(sentenceCount(text), expected, JSON.stringify(text));
+  }
+});
+```
+
+As in Task 1, the final test runs the reference rows. The hand counts for the multi-line passage were made sentence by sentence: the exclamation mark ends the second sentence, the question mark inside the quotation ends the fifth, and `she said.` is the sixth.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test`
+
+Expected: the new file fails with `TypeError: sentenceCount is not a function` in every test, while the 8 tests from Task 1 still pass. If the Task 1 tests fail, stop: something in the working tree changed them.
+
+- [ ] **Step 3: Write the implementation**
+
+In `src/textstats.js`, replace the line `module.exports = { wordCount };` with the following block. Everything above that line stays as it is.
+
+```javascript
+// Words whose trailing period does not end a sentence. Compared lower-case and
+// without any opening bracket or quote. "U.S.A." style initialisms are not
+// listed: they usually do end a sentence when they come last, and guessing
+// otherwise would trade one error for another.
+const ABBREVIATIONS = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'st', 'sr', 'jr', 'vs', 'e.g', 'i.e']);
+
+// A terminator run ("." "?!" "...") plus any closing quotes or brackets, and
+// only where whitespace or the end of the text follows. Requiring that keeps
+// decimals ("3.14"), domains ("example.com") and "a.b.c" in one piece.
+const TERMINATOR_PATTERN = /([.!?]+)(["'”’)\]]*)(?=\s|$)/g;
+
+function endsWithAbbreviation(before) {
+  const last = before.match(/(\S+)$/);
+  if (last === null) {
+    return false;
+  }
+  const word = last[1].replace(/^["'“‘(\[]+/, '').toLowerCase();
+  return ABBREVIATIONS.has(word);
+}
+
+/**
+ * Count the sentences in a piece of text.
+ *
+ * A sentence is a stretch of text containing at least one word and ending at a
+ * terminator run, or at the end of the text. A lone period after a known
+ * abbreviation does not end a sentence.
+ *
+ * @param {string} text
+ * @returns {number}
+ */
+function sentenceCount(text) {
+  assertText('sentenceCount', text);
+  let count = 0;
+  let start = 0;
+  for (const match of text.matchAll(TERMINATOR_PATTERN)) {
+    const before = text.slice(start, match.index);
+    if (match[1] === '.' && endsWithAbbreviation(before)) {
+      continue;
+    }
+    if (tokenize(before).length > 0) {
+      count += 1;
+    }
+    start = match.index + match[0].length;
+  }
+  if (tokenize(text.slice(start)).length > 0) {
+    count += 1;
+  }
+  return count;
+}
+
+module.exports = { wordCount, sentenceCount };
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `npm test`
+
+Expected: 16 tests pass (8 from Task 1 and 8 new) and the summary shows `fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/textstats.js test/sentenceCount.test.js
+git commit -m "feat: add sentenceCount"
+```
+
+### Task 3: `topWords(text, n)`
+
+**Files:**
+- Create: `test/topWords.test.js`
+- Modify: `src/textstats.js`
+
+`topWords` ranks the words of a text by frequency. It builds on `tokenize` from Task 1 and appends a stop-word list, so the output is about content words rather than `the` and `of`.
+
+**Behaviour.**
+
+- Words come from `tokenize`, so the rules from Task 1 apply: hyphenated compounds and contractions stay whole and numbers are words.
+- Each word is lower-cased with `toLowerCase`, so `Éclair` and `éclair` are one entry, and the typographic apostrophe is folded to the straight one, so `keeper’s` and `keeper's` are one entry.
+- A fixed list of 36 common function words (listed in the implementation) is skipped after folding.
+- The result is an array of `{ word, count }` objects ordered by `count` descending, then by `word` ascending in code-unit order, so ties are deterministic. The sort compares with `<` and `>` instead of `localeCompare` to stay independent of the host's locale.
+- At most `n` entries are returned; `n = 0` returns an empty array, and an `n` larger than the number of distinct words returns them all.
+- `n` must be a non-negative integer. Anything else, including `undefined`, `NaN`, a string, a fraction or a negative number, throws `RangeError` with a message starting `topWords:`.
+- A non-string `text` throws `TypeError` with a message starting `topWords:`. The text is checked first.
+- Every call returns fresh objects, so a caller may mutate the result without affecting later calls.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/topWords.test.js`:
+
+```javascript
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { topWords } = require('../src/textstats');
+
+// "keeper" x3, "lamp" x3, "night" x2, "tower" x2, "storm" x1. Stop words
+// (the, a, of, and, on, in, was) are present on purpose and must not appear.
+const PASSAGE = [
+  'The keeper lit the lamp. The lamp was old, and the keeper was older.',
+  'On a night of storm the tower shook; in the night the keeper climbed',
+  'the tower, lamp in hand.',
+].join(' ');
+
+const CASES = [
+  ["apple", 1, [{"word": "apple", "count": 1}]],
+  ["apple apple", 1, [{"word": "apple", "count": 2}]],
+  ["apple banana", 5, [{"word": "apple", "count": 1}, {"word": "banana", "count": 1}]],
+  ["banana apple", 5, [{"word": "apple", "count": 1}, {"word": "banana", "count": 1}]],
+  ["fig fig pear", 1, [{"word": "fig", "count": 2}]],
+  ["fig fig pear", 2, [{"word": "fig", "count": 2}, {"word": "pear", "count": 1}]],
+  ["kiwi kiwi lime lime", 2, [{"word": "kiwi", "count": 2}, {"word": "lime", "count": 2}]],
+  ["x y z", 2, [{"word": "x", "count": 1}, {"word": "y", "count": 1}]],
+];
+
+test('returns an empty array for the empty string', () => {
+  assert.deepEqual(topWords('', 5), []);
+});
+
+test('returns an empty array for punctuation and whitespace only', () => {
+  assert.deepEqual(topWords(' ... -- ?! \n', 5), []);
+});
+
+test('returns an empty array when every word is a stop word', () => {
+  assert.deepEqual(topWords('the and of the to a in it', 5), []);
+});
+
+test('returns an empty array when n is 0', () => {
+  assert.deepEqual(topWords('apple banana apple', 0), []);
+});
+
+test('returns word and count pairs', () => {
+  assert.deepEqual(topWords('apple', 1), [{ word: 'apple', count: 1 }]);
+});
+
+test('orders words by count, highest first', () => {
+  assert.deepEqual(topWords('pear apple apple fig fig fig', 3), [
+    { word: 'fig', count: 3 },
+    { word: 'apple', count: 2 },
+    { word: 'pear', count: 1 },
+  ]);
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 3, {}, ['apple']]) {
+    assert.throws(() => topWords(bad, 3), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('topWords:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, n, expected] of CASES) {
+    assert.deepEqual(topWords(text, n), expected, JSON.stringify([text, n]));
+  }
+});
+```
+
+The passage test pins the ranking of a short text by hand: `keeper` and `lamp` appear three times each, `night` and `tower` twice, and `storm` once. The tie order inside each count follows the alphabet. The words `the`, `a`, `of`, `and`, `on`, `in` and `was` all occur in the passage and must not appear in the result.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test`
+
+Expected: the new file fails with `TypeError: topWords is not a function` in every test, and the 16 earlier tests still pass. A failure that names `Cannot find module` means the test file was saved in the wrong directory.
+
+- [ ] **Step 3: Write the implementation**
+
+In `src/textstats.js`, replace the line `module.exports = { wordCount, sentenceCount };` with the following block.
+
+```javascript
+// Function words that would otherwise crowd every ranking. The list is
+// deliberately short and fixed: callers who need a different list can filter
+// the full ranking (pass a large n) themselves.
+const STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'had', 'has',
+  'have', 'he', 'her', 'his', 'i', 'in', 'is', 'it', 'its', 'of', 'on', 'or',
+  'she', 'that', 'the', 'their', 'there', 'they', 'this', 'to', 'was', 'were',
+  'will', 'with',
+]);
+
+/**
+ * List the most frequent words in a piece of text.
+ *
+ * Words are lower-cased, typographic apostrophes are folded to straight ones,
+ * and stop words are skipped. Entries are ordered by count (highest first),
+ * then alphabetically, so the result is deterministic.
+ *
+ * @param {string} text
+ * @param {number} n How many entries to return; a non-negative integer.
+ * @returns {Array<{word: string, count: number}>}
+ */
+function topWords(text, n) {
+  assertText('topWords', text);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new RangeError(`topWords: n must be a non-negative integer, received ${String(n)}`);
+  }
+  const counts = new Map();
+  for (const token of tokenize(text)) {
+    const word = token.toLowerCase().replace(/’/g, "'");
+    if (STOP_WORDS.has(word)) {
+      continue;
+    }
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([word, count]) => ({ word, count }))
+    .sort((a, b) => b.count - a.count || (a.word < b.word ? -1 : a.word > b.word ? 1 : 0))
+    .slice(0, n);
+}
+
+module.exports = { wordCount, sentenceCount, topWords };
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `npm test`
+
+Expected: 24 tests pass (16 from Tasks 1 and 2 and 8 new) and the summary shows `fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/textstats.js test/topWords.test.js
+git commit -m "feat: add topWords"
+```
+
+### Task 4: `readingTimeMinutes(text, wpm = 200)`
+
+**Files:**
+- Create: `test/readingTimeMinutes.test.js`
+- Modify: `src/textstats.js`
+
+`readingTimeMinutes` turns a word count into a whole number of minutes. It is the smallest function in the module and depends only on `wordCount`, so it also serves as the check that the three earlier tasks compose.
+
+**Behaviour.**
+
+- The result is `Math.ceil(wordCount(text) / wpm)`: any text with at least one word takes at least one minute, 200 words take exactly one, 201 words take two, and the empty text takes zero.
+- `wpm` defaults to 200 when omitted or passed as `undefined`.
+- `wpm` must be a positive, finite number; fractions such as `150.5` are allowed. Zero, negatives, `NaN`, the infinities and any non-number (including numeric strings and `null`) throw `RangeError` with a message starting `readingTimeMinutes:`.
+- A non-string `text` throws `TypeError` with a message starting `readingTimeMinutes:`. The text is checked before the rate.
+- The word count is the same one `wordCount` reports, so hyphenated compounds, contractions and decimals count the way Task 1 defines.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/readingTimeMinutes.test.js`:
+
+```javascript
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { readingTimeMinutes } = require('../src/textstats');
+
+// n copies of a one-word token, so the word count is exactly n.
+const words = (n) => Array.from({ length: n }, () => 'word').join(' ');
+
+const CASES = [
+  ["", null, 0],
+  ["x", null, 1],
+  ["x x", null, 1],
+  ["", 50, 0],
+  ["x", 1, 1],
+  ["x x", 1, 2],
+  ["x x x", 1, 3],
+  ["x x x", 2, 2],
+];
+
+test('returns 0 for the empty string', () => {
+  assert.equal(readingTimeMinutes(''), 0);
+});
+
+test('returns 0 for whitespace and punctuation only', () => {
+  assert.equal(readingTimeMinutes(' \n -- ... '), 0);
+});
+
+test('rounds a single word up to one minute', () => {
+  assert.equal(readingTimeMinutes('hello'), 1);
+});
+
+test('returns 1 for exactly 200 words at the default rate', () => {
+  assert.equal(readingTimeMinutes(words(200)), 1);
+});
+
+test('returns 2 for 201 words at the default rate', () => {
+  assert.equal(readingTimeMinutes(words(201)), 2);
+});
+
+test('returns 2 for exactly 400 words at the default rate', () => {
+  assert.equal(readingTimeMinutes(words(400)), 2);
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 12, {}, ['a b']]) {
+    assert.throws(() => readingTimeMinutes(bad), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('readingTimeMinutes:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, wpm, expected] of CASES) {
+    const actual = wpm === null ? readingTimeMinutes(text) : readingTimeMinutes(text, wpm);
+    assert.equal(actual, expected, JSON.stringify([text, wpm]));
+  }
+});
+```
+
+The `words(n)` helper in the test builds a text of exactly `n` words, so the boundary tests (200, 201 and 400 words) do not depend on any particular prose. The multi-paragraph test uses ten copies of a nine-word sentence per paragraph, three paragraphs, which is 270 words and so two minutes.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test`
+
+Expected: the new file fails with `TypeError: readingTimeMinutes is not a function` in every test, and the 24 earlier tests still pass.
+
+- [ ] **Step 3: Write the implementation**
+
+In `src/textstats.js`, replace the line `module.exports = { wordCount, sentenceCount, topWords };` with the following block.
+
+```javascript
+const DEFAULT_WORDS_PER_MINUTE = 200;
+
+/**
+ * Estimate how many whole minutes a text takes to read.
+ *
+ * The estimate is the word count divided by the reading rate, rounded up, so
+ * any text with at least one word takes at least a minute and the empty text
+ * takes none.
+ *
+ * @param {string} text
+ * @param {number} [wpm=200] Reading rate in words per minute; a positive, finite number.
+ * @returns {number} Whole minutes.
+ */
+function readingTimeMinutes(text, wpm = DEFAULT_WORDS_PER_MINUTE) {
+  assertText('readingTimeMinutes', text);
+  if (typeof wpm !== 'number' || !Number.isFinite(wpm) || wpm <= 0) {
+    throw new RangeError(`readingTimeMinutes: wpm must be a positive finite number, received ${String(wpm)}`);
+  }
+  return Math.ceil(wordCount(text) / wpm);
+}
+
+module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `npm test`
+
+Expected: all 32 tests pass (24 from Tasks 1 to 3 and 8 new) and the summary shows `fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/textstats.js test/readingTimeMinutes.test.js
+git commit -m "feat: add readingTimeMinutes"
+```
+
+## Completion
+
+After Task 4 the working tree holds `src/textstats.js` with four exported functions and four test files. Run `npm test` once more from a clean checkout of the branch to confirm the suite is green: expect 32 tests, 0 failures. Then run a final whole-branch review against this plan before finishing the branch.
+

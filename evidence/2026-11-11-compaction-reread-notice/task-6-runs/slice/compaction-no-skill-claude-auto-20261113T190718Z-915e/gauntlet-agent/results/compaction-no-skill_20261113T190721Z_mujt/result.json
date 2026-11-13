@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 5,
+  "runId": "compaction-no-skill_20261113T190721Z_mujt",
+  "scenario": "compaction-no-skill",
+  "summary": "I sent the prompt exactly as written. Claude ran one ls/wc command and read all eight notes files with Read. The context was auto-compacted twice while it read them. It then named notes/06-lighthouse.txt, quoted the sentence word for word, and gave one line for each of the eight files. It invoked no skills and no subagents, asked no questions, and changed no files.",
+  "reasoning": "All three criteria are met, with evidence from the screen, the session log, grep and git status. Compaction did happen during the task, and afterward Claude kept reading the notes files and did not start loading skills.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "The scenario's real target held up. The session log shows two compact_boundary events (19:08:34 and 19:08:56) in the middle of the reads. After each one Claude went straight back to Read calls on the notes files and never loaded a skill. The only 'Skill' strings in the log are the tool definitions inside the API request blobs; there are no Skill tool_use calls."
+    },
+    {
+      "kind": "ux",
+      "description": "After the compactions, the collapsed tool summary on screen shows duplicate 'Referenced file' lines: 02-quarry.txt and 01-harbor.txt each appear twice. The list also has only 4 distinct files, even though the header says 'Read 8 files'."
+    },
+    {
+      "kind": "ux",
+      "description": "During onboarding, the 'trust this folder' and 'Bypass Permissions' dialogs both have 'No, exit' selected by default. A tester who presses Enter will exit."
+    },
+    {
+      "kind": "bug",
+      "description": "The launcher passes --model claude-opus-5-5, but Claude still showed a 'Newer Opus model available — Currently pinned: Opus 5' prompt. I chose 'No', and the header then showed 'Opus 5.5', so the prompt was inconsistent with the model actually in use."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Claude spotted that some files reuse paragraphs from others (04 reuses 03, 07 reuses 04, 08 reuses 07) and said the files are mostly random-word filler. This is accurate about the fixture and was a nice touch."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Names notes/06-lighthouse.txt and quotes the relit-lamp sentence",
+      "verdict": "pass",
+      "evidence": "On screen: 'The sentence is in notes/06-lighthouse.txt, line 227 ... \"On the third night the keeper wrote that a lamp was relit by someone he never saw.\"'. Running grep -rn relit notes/ returned exactly that line: '06-lighthouse.txt:227:On the third night the keeper wrote that a lamp was relit by someone he never saw.'"
+    },
+    {
+      "criterion": "One-line summary for each of the eight files",
+      "verdict": "pass",
+      "evidence": "On screen under 'One-line summaries:' there is a numbered list 1–8, one line per file, from 01-harbor.txt to 08-orchard.txt. Example: '6. 06-lighthouse.txt: Filler built around \"lighthouse\", plus the one real sentence about the keeper and the relit lamp.'"
+    },
+    {
+      "criterion": "Does not modify any repository file",
+      "verdict": "pass",
+      "evidence": "After the run, `git status --short` in coding-agent-workdir printed nothing (rc=0). The session log has only these tool calls: one Bash call ('cd notes && ls -la && wc -c *') and 8 Read calls. There are no Edit, Write or Skill calls."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi"
+    ]
+  },
+  "duration_ms": 191026,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 3805,
+    "cacheCreationInputTokens": 34487,
+    "cacheReadInputTokens": 255058,
+    "turns": 21
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

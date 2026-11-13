@@ -1,0 +1,59 @@
+2026-11-12T23:37:38Z
+arm=v6.18.1 root=/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/v6181 pin=7f7c399ca1eef6e931d01fa47c02303eef32f44a evals_head=b59b12e16c44ad3e68f4902c5756b3458f29474f
+claude_version=2.1.317 (Claude Code) model=claude-opus-5-5 grader=claude-opus-5-5
+$ bun run src/cli/index.ts run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat "1"
+run-id: sdd-compaction-reread-claude-auto-20261112T233738Z-69ca
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-compaction-reread-claude-auto-20261112T233738Z-69ca
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+provenance: evals b59b12e gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   I sent the prompt exactly as written, and the controller never got
+          through Task 1. It auto-compacted 5 times in about 3 minutes.
+          After each compaction it re-read the full 1034-line SDD
+          SKILL.md, which filled the context window again. Claude Code
+          then stopped the turn with "Autocompact is thrashing". No
+          subagents were dispatched, no code was written and nothing was
+          committed. The agent went idle at the prompt without asking
+          anything, so there was no question for me to answer.
+reasoning Every acceptance criterion depends on the tasks getting done, and none
+          were. The on-disk state matches the starting fixture:
+          src/textstats.js contains only "module.exports = {};", the
+          test/ directory is empty, and git log shows no new commits.
+          The loop ran like this: compact, re-read the whole skill
+          ("Re-reading the full SKILL.md, as required after
+          compaction."), context fills, compact again. The main cause
+          seems to be the skill's re-read-after-compaction instruction
+          combined with the size of SKILL.md (1034 lines) under a 100k
+          autoCompactWindow. It started looping before the first task
+          finished, even though the story expected the first compaction
+          only after task 1.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch feature/textstats
+pre  ✓ file-exists plan.md
+pre  ✓ file-exists .claude/settings.json
+pre  ✓ requires-tool node
+pre  ✓ requires-tool npm
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✗ tool-called Agent
+       ↳ Agent never called
+post ✓ command-succeeds npm test
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       7m 09s      363K n/a (claude-opus-5-5)
+  Coding         4m 58s      964K n/a (claude-opus-5-5)
+    opus                     964K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: F
+error: script "quorum" exited with code 1
+EXIT=1
+2026-11-12T23:44:50Z
+DONE baseline-6181 p6

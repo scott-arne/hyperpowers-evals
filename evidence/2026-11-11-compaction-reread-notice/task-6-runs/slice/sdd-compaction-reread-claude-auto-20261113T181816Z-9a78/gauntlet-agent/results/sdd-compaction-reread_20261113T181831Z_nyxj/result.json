@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T181831Z_nyxj",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller's context was compacted many times. Through all of it, it kept the subagent-driven loop going: four implement→review pairs in order, then a final whole-branch review, with all four functions committed and 70/70 tests passing. It entered the finishing step (it loaded finishing-a-development-branch and ran `sdd-state finish`), but Claude Code then stopped with \"Autocompact is thrashing\". It never showed the finishing options (merge/push/keep/discard), so the session ended halfway through the finishing step.",
+  "reasoning": "The main thing this scenario measures held up: the task loop survived repeated compactions. Criteria 1–3 pass, with evidence from the repo and the session log. Criterion 4 is unclear. The agent entered the finishing step, but Claude Code's autocompact-thrashing guard stopped it before it presented the finishing options. So the session didn't end cleanly at the user's choice; it ended on an error inside the finishing step. That needs an engineer to look at it, rather than being an outright pass or fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "At the end, Claude Code stopped with 'Autocompact is thrashing … 3 times in a row' just as the finishing skill started. The finishing options were never shown and the session went idle without the agent saying it was done. After each compaction the controller re-read several large skill files (SKILL.md, task-loop.md, review-and-complete.md, implementer-prompt.md, task-reviewer-prompt.md, final-and-finish.md), and the 'Skills restored' blocks seem to bring them back as well. That likely refilled the small context window right away."
+    },
+    {
+      "kind": "performance",
+      "description": "The session log has about 20 compact_boundary entries over roughly 25 minutes for a four-task plan. A compaction happened after almost every subagent dispatch."
+    },
+    {
+      "kind": "bug",
+      "description": "The first-run onboarding screens came up even though the launcher comments say they're suppressed: theme picker, security notes, folder trust prompt (with 'No, exit' selected by default), a 'Newer Opus model available' prompt (pinned Opus 5 even though --model claude-opus-5-5 was passed; I chose No), and the bypass-permissions warning."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent never asked about a worktree or branch. It worked on the already-checked-out feature/textstats branch because the plan says 'Work happens on the current branch'. That's reasonable, but there was no confirmation."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-flight question (PASSAGE constants are unused and tests are missing) used an AskUserQuestion picker. I had to choose 'Type something' to give the scripted answer, and the first Enter after typing didn't submit, so a second Enter was needed."
+    },
+    {
+      "kind": "ux",
+      "description": "The screen fills up with repeated 'Read ../../../../../../../../.cache/hyperpowers/...' and 'Skills restored' lines after every compaction, which makes the real progress hard to follow."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent noted that Codex isn't installed and ran a 'degraded' Codex gate for each task review and for the final review."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, the work is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`; test/ holds wordCount, sentenceCount, topWords and readingTimeMinutes .test.js; git log shows commits 8025be2 wordCount, 59f2e71 sentenceCount, 9d4286d topWords, e29b73d readingTimeMinutes; `npm test` → `tests 70 … pass 70 fail 0`. git status was clean."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent tool calls in the session log, in order: Implement Task 1, Review Task 1, Implement Task 2, Review Task 2, Implement Task 3, Review Task 3, Implement Task 4, Review Task 4. The subagent log mtimes match that order (10:24:52 impl1, 10:26:38 rev1, 10:29:46 impl2, 10:30:54 rev2, 10:35:43 impl3, 10:37:42 rev3, 10:40:30 impl4, 10:42:15 rev4)."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "The log has the Agent call 'Final whole-branch review' after Review Task 4 (subagent agent-ade5e5f079fd449b1, 10:45:48, prompt starts 'You are a Senior Code Reviewer'). The controller then said: 'The final review found nothing Critical or Important and said ready to merge'."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "unclear",
+      "evidence": "Skill hyperpowers:finishing-a-development-branch was invoked, and the screen shows 'I'm using the finishing-a-development-branch skill to complete this work.' It ran `sdd-state finish` plus a final git status/npm test check. The last screen message is the yellow warning 'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row…', after which the prompt sat idle. No merge/push/keep/discard options were shown and I was never asked a finishing question. The session stopped inside the finishing step, but because of an error, not at the user-choice point."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 1857221,
+  "usage": {
+    "inputTokens": 92,
+    "outputTokens": 7191,
+    "cacheCreationInputTokens": 49144,
+    "cacheReadInputTokens": 984528,
+    "turns": 41
+  },
+  "status": "investigate",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T233737Z_bphz",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The SDD controller finished Task 1 (wordCount) and then got stuck in a compaction loop. After each compaction it re-read SKILL.md, the reviewer template and progress.md, which filled its context again. Claude Code then stopped with \"Autocompact is thrashing\" and went back to an idle prompt. That was before the Task 1 review was dispatched, and Tasks 2–4 never started. No final review and no finishing step happened.",
+  "reasoning": "None of the four acceptance criteria were met. Only wordCount was implemented and committed, it was never reviewed, Tasks 2–4 were never started, there was no final review, and the session did not reach the finishing step. The agent stopped on its own because Claude Code detected compaction thrashing. That looks like the product failure this scenario is meant to measure: the controller re-reads too much after compaction for the configured window. I did not steer it afterwards, per the story's instructions.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "After compaction the controller re-read the full SKILL.md, the reviewer template (257 lines), progress.md and git state. That filled the 100k autoCompactWindow again within a few turns. The session log has 9 compact_boundary entries, and Claude Code's thrash guard then stopped the agent. Re-reading after compaction costs more than the window allows, so the task loop can't continue."
+    },
+    {
+      "kind": "bug",
+      "description": "After Task 1 the controller could not get past the review step. On every pass it said it would re-read the skill before dispatching the task reviewer, re-read it, compacted, and started over without ever dispatching the reviewer."
+    },
+    {
+      "kind": "ux",
+      "description": "When thrashing stopped the run, the agent said nothing to the user about where it was. The only message was Claude Code's generic \"use /clear\" warning, and the prompt was left idle. A user would not know that Task 1 is unreviewed and the work is sitting on branch feature/textstats.76cc6a12.task-1."
+    },
+    {
+      "kind": "ux",
+      "description": "Pre-flight asked a multiple-choice question about gaps in the plan's tests (unused PASSAGE constants, described tests that are missing). I typed \"Proceed as you recommend.\" into the free-text option, and the implementer then added tests: 19 tests for Task 1, against the plan's 8."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the trust prompt and the bypass-permissions prompt both default to \"No, exit\". A \"Newer Opus model available (pinned Opus 5)\" prompt also appeared even though the launcher passes --model claude-opus-5-5. I chose No. The header then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "The display is noisy: after each compaction the screen repeats several \"Referenced file ../../../../../../../../.cache/...SKILL.md\" / \"Skills restored\" lines, with very long relative paths."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js with test files, and npm test passes",
+      "verdict": "fail",
+      "evidence": "`grep module.exports src/textstats.js` → `module.exports = { wordCount };`. test/ contains only wordCount.test.js. `git log` shows only `8ab9157 feat: add wordCount` past the fixture commit. npm test: 19 pass, 0 fail, but this covers wordCount only."
+    },
+    {
+      "criterion": "Each task is reviewed before the next starts",
+      "verdict": "fail",
+      "evidence": "jq over the session log's Agent tool_use descriptions returned only `Implement Task 1: wordCount`. No reviewer was dispatched, and subagents/ holds only agent-af2814d2889d5138e.jsonl. The last assistant text on screen was \"Re-reading the full SKILL.md, which the compaction requires.\", followed by the thrashing error."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "fail",
+      "evidence": "The last task was never reached. The Agent dispatch list from the session log contains only the Task 1 implementer."
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "fail",
+      "evidence": "The session ended with the yellow warning: \"Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row...\" and then an idle prompt (\"Baked for 8m 8s\"). The log mtime stayed unchanged for about 2 minutes. No finishing question was asked."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 727514,
+  "usage": {
+    "inputTokens": 62,
+    "outputTokens": 4731,
+    "cacheCreationInputTokens": 22808,
+    "cacheReadInputTokens": 491521,
+    "turns": 28
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

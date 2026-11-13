@@ -1,0 +1,59 @@
+2026-11-12T23:37:46Z
+arm=v6.18.1 root=/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/v6181 pin=7f7c399ca1eef6e931d01fa47c02303eef32f44a evals_head=b59b12e16c44ad3e68f4902c5756b3458f29474f
+claude_version=2.1.317 (Claude Code) model=claude-opus-5-5 grader=claude-opus-5-5
+$ bun run src/cli/index.ts run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat "1"
+run-id: sdd-compaction-reread-claude-auto-20261112T233746Z-5010
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-compaction-reread-claude-auto-20261112T233746Z-5010
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+provenance: evals b59b12e gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The controller loaded subagent-driven-development, stayed on
+          feature/textstats, and set up its ledger and plan snapshot. It
+          then got caught in an auto-compaction loop before sending out
+          any implementer subagent. Claude Code stopped with
+          "Autocompact is thrashing: the context refilled to the limit
+          within 3 turns of the previous compact, 3 times in a row." The
+          agent went idle at the prompt without asking a question. None
+          of the four tasks was started, and src/textstats.js is still
+          the empty stub.
+reasoning The scenario was meant to show the task loop surviving a compaction
+          partway through the plan. Instead, compaction started before
+          task 1 and never stopped. After each compaction, the
+          controller re-read the whole SKILL.md (1034 lines, 76 KB) in
+          two big Read calls, plus the 27.5 KB plan.md. With
+          autoCompactWindow=100000, that filled the context back to the
+          limit within a few turns. The log has 3 compact_boundary
+          events, and the Read calls on SKILL.md repeat after each one.
+          Claude Code then halted the session. The agent asked nothing,
+          so the script left me nothing I was allowed to send, and the
+          session ended there. No acceptance criterion is met.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch feature/textstats
+pre  ✓ file-exists plan.md
+pre  ✓ file-exists .claude/settings.json
+pre  ✓ requires-tool node
+pre  ✓ requires-tool npm
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✗ tool-called Agent
+       ↳ Agent never called
+post ✓ command-succeeds npm test
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       5m 16s      269K n/a (claude-opus-5-5)
+  Coding         3m 23s      697K n/a (claude-opus-5-5)
+    opus                     697K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: F
+error: script "quorum" exited with code 1
+EXIT=1
+2026-11-12T23:43:04Z
+DONE baseline-6181 p10

@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T181831Z_zdmo",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller kept its task loop through about 30 auto-compactions. All four tasks were implemented, each was reviewed before the next started, a final whole-branch review ran, and `npm test` passes 32/32. But the session did not end cleanly. Right after it loaded finishing-a-development-branch, Claude Code stopped with \"Autocompact is thrashing\", before showing any finish options (merge/push/keep/discard). The run technically ended inside the finishing step, but it was halted by an error, not by the step completing.",
+  "reasoning": "Criteria 1–3 are clearly met, with evidence from git, `npm test` and the session log. Criterion 4 is ambiguous. The finishing-a-development-branch skill was loaded and the agent said \"I'm using the finishing-a-development-branch skill to complete this work\". Then Claude Code halted with an autocompact-thrashing error, and no finish options were ever offered to the user. The repeated compactions near the end, and the agent re-reading several skill files after each one (\"re-reading the installed skill files as the compaction notice asks\"), seem to have caused the thrashing. An engineer should decide whether that counts as reaching the finishing step or as a breakdown of the re-read-after-compaction behaviour.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Claude Code stopped with \"Autocompact is thrashing\" at the start of the finishing step. After every compaction the controller re-reads several large skill files (SKILL.md, final-and-finish.md, task-reviewer-prompt.md, textstats.js) plus plan.md, which seems to refill the small context straight away. The user never got the finish options."
+    },
+    {
+      "kind": "performance",
+      "description": "There were 30 compact_boundary events in about 37 minutes (18:23 to 19:00), roughly one every 1–1.5 minutes. The whole run took about 41 minutes for four small functions."
+    },
+    {
+      "kind": "bug",
+      "description": "Commit eaf6abc's subject line is \"feat: add wordCount Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\". The co-author trailer ended up in the subject line instead of a trailer line."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent created and switched to a `feature/textstats` branch without asking about worktrees or branches. The story expected it to ask, with the reply \"Stay on the current branch\". It also created a `hyperpowers/state` branch and many \"sdd plan: ...\" bookkeeping commits on the feature branch."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1, a two-question AskUserQuestion appeared (unused PASSAGE constants; missing coverage). I answered both with \"Proceed as you recommend.\" The agent then amended plan.md in a commit (\"docs(hyperpowers): amend plan.md: plan: drop unused PASSAGE constants...\"). Its commit message repeats \"plan:\"."
+    },
+    {
+      "kind": "ux",
+      "description": "At startup a 'Newer Opus model available: update to Opus 5.5?' prompt appeared even though the launcher passed --model claude-opus-5-5. The workspace-trust and bypass-permissions dialogs both default to 'No, exit'. I answered No to the model prompt, and the banner then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex is not installed, so the agent recorded the review gate as degraded/no-op for each task and told the user to install codex-plugin-cc later. That's reasonable, but it's extra noise in the output."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions exported from src/textstats.js, each with a test file, committed, npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. `test/` contains wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. `git status --short` printed nothing (clean tree). `git log` shows feat commits for all four functions. `npm test`: \"ℹ tests 32 ℹ pass 32 ℹ fail 0\"."
+    },
+    {
+      "criterion": "Each task reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatch timestamps from the session log: Implement T1 18:24:34, Review T1 18:28:16, Re-review T1 18:32:18, Implement T2 18:37:09, Fix T2 18:39:44, Review T2 18:41:37, Implement T3 18:45:39, Review T3 18:47:50, Implement T4 18:51:18, Review T4 18:53:15. Each review came before the next implementation started."
+    },
+    {
+      "criterion": "Final whole-branch review after last task",
+      "verdict": "pass",
+      "evidence": "Session log: Agent \"Final whole-branch review\" dispatched at 18:56:46, after Review Task 4 (18:53:15) and the text \"All four tasks are complete\" (18:55:19)."
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "unclear",
+      "evidence": "18:59:12: Skill hyperpowers:finishing-a-development-branch loaded; agent says \"I'm using the finishing-a-development-branch skill to complete this work. First, I'm re-reading the installed skill files...\". 19:00:26: \"Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row.\" No AskUserQuestion about merge/push/keep/discard appears in the log, so the finishing options were never shown."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 2576959,
+  "usage": {
+    "inputTokens": 96,
+    "outputTokens": 7199,
+    "cacheCreationInputTokens": 48601,
+    "cacheReadInputTokens": 1040931,
+    "turns": 43
+  },
+  "status": "investigate",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T233741Z_trkx",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller never started Task 1. It loaded the SDD skill, read plan.md and set up the ledger, then got stuck in a compaction loop. After each compaction it re-read the whole 76 KB SKILL.md, which filled the context again. After 3 compactions in about 80 seconds, Claude Code stopped with \"Autocompact is thrashing\". No subagent was dispatched, nothing was implemented, and the session went idle at the prompt without asking anything.",
+  "reasoning": "None of the acceptance criteria were met. Compaction thrashing stopped the controller before any task was dispatched, and the agent never asked a question. Steering it further would go against the story's instruction not to otherwise steer the session.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "After each compaction the controller re-read the full SDD SKILL.md, which is 1034 lines and 76,445 bytes, in two large Read calls (limit 820, then offset 821). With autoCompactWindow=100000 that alone nearly fills the window, so each compaction was followed by another. The log has 3 compact_boundary events at 23:39:58, 23:40:36 and 23:41:16. Claude Code then aborted with 'Autocompact is thrashing'. The re-read-after-compaction behaviour this scenario measures makes the controller unable to continue."
+    },
+    {
+      "kind": "bug",
+      "description": "The first SKILL.md read used `allow_large:true`, and plan.md (27.6 KB) was also cat'ed through Bash, so the controller used a lot of context before doing any task work. Compaction happened before Task 1, not after Task 1 as the scenario expects."
+    },
+    {
+      "kind": "ux",
+      "description": "Once thrashing stopped it, the agent went idle without telling the user it hadn't started the plan or asking how to proceed. The only explanation is Claude Code's generic yellow warning about reading in smaller chunks or using /clear."
+    },
+    {
+      "kind": "ux",
+      "description": "After compaction the screen showed 'Skills restored (...)' and 'Referenced file ../../../../../../../../.cache/...SKILL.md' with a very long relative path that is hard to read."
+    },
+    {
+      "kind": "ux",
+      "description": "Launch setup: the trust-folder and bypass-permissions dialogs both had 'No, exit' selected by default. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No to avoid a restart, and the header then showed 'Opus 5.5 · Google Vertex AI'."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions implemented/exported with tests, committed, npm test passes",
+      "verdict": "fail",
+      "evidence": "`git log --oneline` in the workdir shows only fixture commits, with b961eb2 'Add textstats fixture and implementation plan' at the top. `git status --short` is empty. `test/` is empty. Nothing was implemented."
+    },
+    {
+      "criterion": "Each task reviewed before next task starts",
+      "verdict": "fail",
+      "evidence": "No task was ever started. Listing the session log's tool_use entries with jq shows only Skill, Bash and Read calls and no Agent (subagent) dispatch. So no implementer or reviewer ever ran."
+    },
+    {
+      "criterion": "Final whole-branch review after last task",
+      "verdict": "fail",
+      "evidence": "No tasks were done and there was no final review. The session ended with the warning 'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row.'"
+    },
+    {
+      "criterion": "Session ends in finishing step",
+      "verdict": "fail",
+      "evidence": "The final screen shows the thrashing warning and an idle prompt ('Baked for 3m 1s · done 3:41 PM'). There was no finishing step and no question about merging or keeping the branch."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 341625,
+  "usage": {
+    "inputTokens": 52,
+    "outputTokens": 4301,
+    "cacheCreationInputTokens": 21624,
+    "cacheReadInputTokens": 395082,
+    "turns": 23
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

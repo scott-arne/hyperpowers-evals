@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T181831Z_5cra",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" The agent asked one pre-flight question (two parts), which I answered with \"Proceed as you recommend.\" After that it ran all four tasks, with a review and fix loops for each one. It then ran a final whole-branch review, one fix wave and a re-review, and loaded the hyperpowers:finishing-a-development-branch skill. Compaction happened about 30 times; each time the controller re-read its skill files and continued the loop correctly. But right after it loaded the finishing skill, Claude Code stopped with \"Autocompact is thrashing... 3 times in a row\". It never offered the merge/push/keep/discard choice, so I never had to answer it. All code is committed and npm test passes (48/48).",
+  "reasoning": "Criteria 1–3 are clearly met, and the controller kept its task loop through many compactions, which is what the story is about. Criterion 4 is not cleanly met: the session reached the finishing skill but stopped with a Claude Code 'Autocompact is thrashing' error before showing any finishing options. It is in the finishing step, but stopped by an error rather than completed, so an engineer should look at whether the post-compaction re-reads cause the thrashing.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Claude Code stopped right after the finishing skill loaded, with 'Autocompact is thrashing... A file being read or a tool output is likely too large for the context window.' Re-reading the skill files after each compaction (several step files of about 150–260 lines each, plus 'Referenced file' attachments that showed up again after every compaction) seems to refill the small window right away. So the re-read behavior this scenario is meant to measure is also what prevented the finishing step from completing."
+    },
+    {
+      "kind": "performance",
+      "description": "The session log has about 30 'compact_boundary' entries in roughly 40 minutes, and the screen often showed '0% until auto-compact'. Every compaction re-attached the same files (task-reviewer-prompt.md, review-and-complete.md, implementer-prompt.md, the task output file), which wastes context."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Most reviewer subagents ran for only 10–20 seconds (e.g. Task 3 review 18:48:56–18:49:09, Task 4 review 18:53:44–18:53:54). That may be fine for small tasks, but it is worth checking that the reviews are substantive."
+    },
+    {
+      "kind": "ux",
+      "description": "The controller changed the plan without being told to: it amended plan.md (commit 1dc7ef6) to add passage tests and RangeError tests after a pre-flight scan. This was based on my 'Proceed as you recommend.' reply, but the scope went from 32 to 48 tests."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed a folder-trust prompt (with 'No, exit' as the default) and a 'Newer Opus model available — Currently pinned: Opus 5' prompt, even though the launcher passes --model claude-opus-5-5 and the HOWTO says the trust prompt is suppressed. I answered No to the model update and Yes to trust."
+    },
+    {
+      "kind": "ux",
+      "description": "Screen output shows long relative paths like '../../../../../../../../../../private/tmp/claude-502/...', which are hard to read."
+    },
+    {
+      "kind": "bug",
+      "description": "Task 2 got 'Re-review Task 2 fix round 2' with no matching 'Fix round 2' subagent; commit 9b9f2e6 ('test: use real curly quotes...') seems to have been made outside a dispatched fixer, possibly by the controller itself. Separately, the Task 2 fix (aef2cc6) introduced a regression (it dropped the straight apostrophe) that the task-level re-reviews missed; only the final review caught it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each with its test file, committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. `git status --short` shows nothing uncommitted. git log includes 'feat: add wordCount', 'feat: add sentenceCount', 'feat: add topWords', 'feat: add readingTimeMinutes'. npm test: 'ℹ tests 48 ℹ pass 48 ℹ fail 0'."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatch order in the session log: Implement T1 → Review T1 → fix → Re-review T1 → Implement T2 → Review T2 → Fix → Re-review x2 → Implement T3 → Review T3 → Implement T4 → Review T4. Subagent file timestamps show each reviewer finished before the next implementer started, e.g. Task 3 reviewer agent-acfdf224 ended 18:49:09 and the Task 4 implementer started 18:51:57; Task 2's last re-review ended 18:44:59 and the Task 3 implementer started 18:47:32. The hyperpowers/state ledger has commits 'sdd plan: Task 2 complete', 'Task 3 complete', 'Task 4 complete'."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log: 'Agent Final whole-branch review' dispatched 18:56:04, after the Task 4 review (18:53:44). Subagent agent-a5eacb7d ran 18:56:04–18:57:09. Screen showed: 'The final review returned one Important finding: aef2cc6 removed the straight apostrophe...'. That led to 'Fix final review findings', 'Re-review final fix wave' and commit c03412c."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "unclear",
+      "evidence": "The log shows 'Skill: hyperpowers:finishing-a-development-branch' at 19:00:41. The last assistant text was 'I'm using the finishing-a-development-branch skill to complete this work. First I'll re-read the skill file in full...', followed by the screen message 'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row.' and an idle prompt. The finishing options (merge/push/keep/discard) were never shown and the step did not finish; the session stopped inside it because of an error."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 2732977,
+  "usage": {
+    "inputTokens": 114,
+    "outputTokens": 9337,
+    "cacheCreationInputTokens": 55152,
+    "cacheReadInputTokens": 1252390,
+    "turns": 51
+  },
+  "status": "investigate",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
