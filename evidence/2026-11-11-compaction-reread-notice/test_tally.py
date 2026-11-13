@@ -1185,6 +1185,15 @@ class RevisionRuns(unittest.TestCase):
                 self.assertIn("thrash=1", line)
                 self.assertEqual(row["compactions"], 2)
 
+    def test_thrash_fails_an_otherwise_passing_run(self) -> None:
+        entries = [SDD_LOAD, compact(), agent("Implement Task 1: a", "i1"), notif("i1"), compact(), THRASH_ENTRY]
+        for arm in ("baseline-6181", "slice"):
+            with self.subTest(arm=arm):
+                row, line = revision_row(arm, entries)
+                self.assertEqual((row["valid"], row["thrash"], row["outcome"]), (True, 1, False))
+                self.assertEqual(row["classes"]["implement"], 1)
+                self.assertIn("outcome=False", line)
+
     def test_passing_verdict_without_a_dispatch_fails_the_outcome(self) -> None:
         row, _ = revision_row("slice", [SDD_LOAD, compact(), reply("done")])
         self.assertEqual((row["valid"], row["void_kind"], row["outcome"], row["thrash"]), (True, None, False, 0))

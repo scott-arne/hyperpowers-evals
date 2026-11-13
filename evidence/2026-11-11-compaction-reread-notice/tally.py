@@ -29,8 +29,9 @@ without it; each mode skips the other's logs without a line.
   log rules read them) and ``no-compaction`` (no automatic compaction after
   the SDD skill event). Every other run is valid. Outcome passes when the
   final verdict is ``pass``, every post check passed, and the run dispatched
-  at least one ``implement`` subagent. A run ending in the thrash stop, or
-  with no dispatch, is valid and fails its outcome.
+  at least one ``implement`` subagent. A run ending in the thrash stop (any
+  thrash entry, even after a passing verdict), or with no dispatch, is valid
+  and fails its outcome.
 * Thrash: a main-thread assistant entry whose ``message.model`` is
   ``<synthetic>`` and whose text holds ``Autocompact is thrashing``; the run
   row shows ``thrash=1``.
@@ -1299,15 +1300,15 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
         if kind is None and follows["compactions"] == 0:
             kind = "no-compaction"
         valid = kind is None
+        thrash = any(e["kind"] == "thrash" for e in found)
         if valid:
             outcome = (
                 final_reading(verdict) == "pass"
                 and post_checks_pass(verdict)
                 and dispatch_counts(found)["implement"] >= 1
+                and not thrash
             )
-        extra: dict[str, Any] = {
-            "thrash": int(any(e["kind"] == "thrash" for e in found)), "compactions": follows["compactions"],
-        }
+        extra: dict[str, Any] = {"thrash": int(thrash), "compactions": follows["compactions"]}
         if arm == "slice":
             extra.update(follows)
     elif scenario == SDD:
