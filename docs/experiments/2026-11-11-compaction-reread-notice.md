@@ -1,4 +1,4 @@
-# 2026-11-11: compaction re-read notice and its revision, a compact SDD controller (FAIL)
+# 2026-11-11: compaction re-read notice and its revision, a compact SDD controller (FAIL); the controller alone (bars 1, 2 and 4 PASS, bar 3 FAIL)
 
 ## Hypotheses
 
@@ -17,6 +17,16 @@ run ends in Claude Code's "Autocompact is thrashing" stop, and most
 compactions are followed by the board, the task's ledger lines and the
 named step file. Spec: the same file, "Revision (2026-11-12): a compact SDD
 controller" and "Testing (revised)".
+
+Third hypothesis, after the notice was removed (spec decisions 11 to 13).
+The same controller and step files with no compaction notice keep SDD
+working at a 100,000-token window: the plan finishes in at least 8 of 10
+valid runs, no run ends in the thrash stop, at least 85% of compactions
+are followed by the board, the task's ledger lines and the named step
+file, and the median is at most 16 compactions per run. The SDD paragraph
+regains v6.18.1's clause for other skills whose re-attached copy is cut
+short. Spec: the same file, "Revision (2026-11-13): the controller without
+the notice" and "Testing (second revision)".
 
 ## Config
 
@@ -49,6 +59,18 @@ Revised campaign:
 - `slice`, sentinel: the same pin on `compaction-no-skill`, launched
   19:07Z (`manifest-revision-b.tsv`), one replacement at 19:12Z.
 
+Second revision (2026-11-13):
+
+- `controller`, treatment: `96edc68e337af67f237cc1f65d65094ee8519216`,
+  the integration head after the notice came out, on
+  `sdd-compaction-reread`, launched 2026-11-13 22:48Z
+  (`manifest-revision-c.tsv`). Against the slice pin, only
+  `hooks/session-start` (the notice removed) and the SDD paragraph (the
+  clause regained) differ.
+- Control: the same ten `baseline-6181` runs, not run again. Same harness
+  pin, Claude Code version, models, window, validity rules and
+  replacement cap. No sentinel wave, and the `slice` results stand.
+
 Outcome passes when the final reading is pass, every post-check passes and
 the run dispatched at least one implementer; a thrash stop or a run with no
 dispatch is valid and fails. Validity, the per-compaction rule and the bars
@@ -73,7 +95,9 @@ Paths are under `evidence/2026-11-11-compaction-reread-notice/task-6-runs/`.
 `tally.txt` (`python3 tally.py --waves-1-2`) reads the first campaign and
 `tally-revision.txt` (`python3 tally.py`) the revised one. Commits:
 `b59b12e16c` (waves 1-2 and the stop), `ac33ae7709` (revised runs and
-tally).
+tally), `b2e4086bf5` (controller pin), `9bf70a2e94` (controller runs and
+tally). `tally-revision-2.txt` (`python3 tally.py` at `9bf70a2e94`) reads
+all three revision arms.
 
 - `control/`: ten runs `sdd-compaction-reread-claude-auto-20261112T224035Z-*`.
 - `treatment/`: ten runs `sdd-compaction-reread-claude-auto-20261112T231620Z-*`;
@@ -83,6 +107,8 @@ tally).
   ten sentinel runs `compaction-no-skill-claude-auto-20261113T190718Z-*`
   and the replacement `compaction-no-skill-claude-auto-20261113T191201Z-3b39`
   for the void `...-c178` (`sentinel-reruns.tsv`).
+- `controller/`: ten SDD runs `sdd-compaction-reread-claude-auto-20261113T224803Z-*`,
+  all valid, none replaced.
 
 The Task 1 smoke, `compaction-no-skill-claude-auto-20261112T071537Z-f939`,
 is not a trial and was not archived.
@@ -127,8 +153,31 @@ bar 5, sentinel failures (at most 1 of 10): PASS
    after a compaction. One grader void (p9 `...-c178`, whose Gauntlet
    summary says no compaction happened), replaced by r1.
 
-The notice stays off any release (the human partner's decision). The
-hyperpowers evidence note is
+Second revision, per bar, copied from `tally-revision-2.txt`:
+
+```text
+bar 1, controller SDD outcome (at least 8 of 10 valid, and more than baseline-6181's): PASS
+bar 2, controller SDD thrash (no valid run with thrash=1): PASS
+bar 3, controller SDD compactions followed (at least 85%, valid runs pooled): FAIL
+bar 4, controller SDD median compactions per run (at most 16): PASS
+```
+
+1. Outcome: `controller` 10 of 10 valid against the baseline's 0 of 10
+   (and `slice`'s 5 of 10). PASS.
+2. Thrash: 0 of 10 `controller` runs ended in the thrash stop (baseline
+   10, `slice` 5). PASS.
+3. Per compaction: 30 of 126 followed (24%), below the bar of 85%. FAIL.
+   The board and the ledger grep were both credited after 94, a step file
+   of any kind was read after 38, and the SDD `SKILL.md` after none. By the
+   tally's definition a followed compaction needs the named step file read
+   before the next governed action, so the 88 compactions with no step-file
+   read are all unfollowed: 88 of the 96 unfollowed. That is arithmetic on
+   the tally's definitions; the records do not say why the sessions
+   skipped the read.
+4. Median compactions per run: 11, within 16. PASS.
+
+The notice stays off any release (the human partner's decision), and the
+branch no longer carries it. The hyperpowers evidence note is
 `docs/hyperpowers/2026-11-11-compaction-reread-notice-eval-evidence.md`.
 
 ## Limits
@@ -137,7 +186,9 @@ One four-task plan, one 100,000-token window, one controller model and
 one Claude Code version. The baseline runs predate the revised launcher;
 they stand as the control because their harness paths match the pin, and
 their logs carry no scenario in their names. The slice SDD subagents ran
-on `claude-sonnet-5-5`, two runs also on `claude-haiku-4-5-20251001`. The
+on `claude-sonnet-5-5`, two runs also on `claude-haiku-4-5-20251001`; the
+controller SDD subagents ran on `claude-sonnet-5-5`, four runs also on
+`claude-haiku-4-5-20251001`. The controller arm had no sentinel wave. The
 brainstorming compaction scenario was not run. Whether a hook edited on
 disk reaches a running session is unresolved: session `ec562ba3`'s
 2026-11-10T16:55Z compaction printed an `sdd/` ledger path, which either
