@@ -194,7 +194,7 @@ The old arms (`control`, `treatment`, `shipped`) are read only under
 `--waves-1-2`.
 
 The 2026-11-12 baseline is the control. Its harness paths at its evals head
-`b59b12e16c` are identical to the pin `474ea8c8df`; it ran on Claude Code
+`ec9c079d8b` are identical to the pin `474ea8c8df`; it ran on Claude Code
 2.1.317 with controller and grader `claude-opus-5-5` (checked 2026-11-12).
 Its logs predate the launcher and carry no scenario in their names, so
 `measure-launch.sh` launches `baseline-6181` only as a replacement

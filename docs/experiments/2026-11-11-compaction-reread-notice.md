@@ -52,7 +52,7 @@ Revised campaign:
 - `baseline-6181`, control: released v6.18.1
   `7f7c399ca1eef6e931d01fa47c02303eef32f44a` on `sdd-compaction-reread`,
   the ten runs of the 2026-11-12 baseline. Their harness paths at evals
-  `b59b12e16c` are identical to the harness pin.
+  `ec9c079d8b` are identical to the harness pin.
 - `slice`, treatment: `d00c689ff2addd5438a09e35f0bd355f7bd83b96` on
   `sdd-compaction-reread`, launched 2026-11-13 18:18Z
   (`manifest-revision-a.tsv`).
@@ -79,13 +79,13 @@ are in the evidence README, "Revision (2026-11-12)".
 Two departures from the plan. The tally as first written read the five
 slice SDD runs that ended in the thrash stop as grader voids, since the
 Gauntlet-Agent returned `investigate` for each; the spec counts a thrash run
-as a valid failure, `tally.py` was fixed (`db70c8d345`), and the five count
+as a valid failure, `tally.py` was fixed (`0b2702aa90`), and the five count
 as valid failures with none replaced. And no dollar figure is kept in this
 repository: the 2026-11-11 rewrite's two rules (quorum's dollar column
 dropped; `costUSD`, `totalCostUSD`, `lastCost`, `est_cost_usd`,
 `total_cost_usd`, `total_est_cost_usd` and `cost_usd` set to null) were
 applied to the new archive and to 27 files already committed by the waves
-1-2 commit (`54bf447b9b`). A null cost value in an archived run comes from
+1-2 commit (`6a590734fa`). A null cost value in an archived run comes from
 that scrub, not from capture. The tally output was byte-identical before
 and after.
 
@@ -94,9 +94,9 @@ and after.
 Paths are under `evidence/2026-11-11-compaction-reread-notice/task-6-runs/`.
 `tally.txt` (`python3 tally.py --waves-1-2`) reads the first campaign and
 `tally-revision.txt` (`python3 tally.py`) the revised one. Commits:
-`b59b12e16c` (waves 1-2 and the stop), `ac33ae7709` (revised runs and
-tally), `b2e4086bf5` (controller pin), `9bf70a2e94` (controller runs and
-tally). `tally-revision-2.txt` (`python3 tally.py` at `9bf70a2e94`) reads
+`ec9c079d8b` (waves 1-2 and the stop), `54f5fbdf0c` (revised runs and
+tally), `d8e6825286` (controller pin), `af9879ccbb` (controller runs and
+tally). `tally-revision-2.txt` (`python3 tally.py` at `af9879ccbb`) reads
 all three revision arms.
 
 - `control/`: ten runs `sdd-compaction-reread-claude-auto-20261112T224035Z-*`.
