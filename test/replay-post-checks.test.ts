@@ -2200,7 +2200,11 @@ test.skipIf(!existsSync(CORPUS_ROOT))(
       scenariosRoot: resolve(REPO, 'scenarios'),
     });
     expect(hashTree(join(corpus, runId))).toBe(before);
-    expect(r.externalReferences.length).toBeGreaterThan(0); // the Claude URL-handler symlink
+    // No count of external references here: the Claude URL-handler symlink
+    // this once expected is host data, and some corpus copies no longer carry
+    // it. The classification rule is pinned by the fixture cases above
+    // (external link kept, climb out of the source, detour back into the
+    // source, alternates outside the run).
     expect(r.armL.root).not.toBe(r.armN.root);
     expect(r.status).toBe('equal');
     expect(r.unparsedLines).toEqual([]); // the quoted-$( check parses as one argument
