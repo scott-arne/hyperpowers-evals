@@ -80,13 +80,17 @@ Two departures from the plan. The tally as first written read the five
 slice SDD runs that ended in the thrash stop as grader voids, since the
 Gauntlet-Agent returned `investigate` for each; the spec counts a thrash run
 as a valid failure, `tally.py` was fixed (`0b2702aa90`), and the five count
-as valid failures with none replaced. And no dollar figure is kept in this
-repository: the 2026-11-11 rewrite's two rules (quorum's dollar column
+as valid failures with none replaced. And this campaign's archive and
+commits keep no dollar figure; the claim covers nothing else in this
+repository. The 2026-11-11 rewrite's two rules (quorum's dollar column
 dropped; `costUSD`, `totalCostUSD`, `lastCost`, `est_cost_usd`,
 `total_cost_usd`, `total_est_cost_usd` and `cost_usd` set to null) were
 applied to the new archive and to 27 files already committed by the waves
-1-2 commit (`6a590734fa`). A null cost value in an archived run comes from
-that scrub, not from capture. The tally output was byte-identical before
+1-2 commit (`6a590734fa`, empty after the 2026-11-15 rewrite, which
+folded the nulling into the commits that added those files,
+`ec9c079d8b` through `0b2702aa90`; see
+`evidence/history-rewrite-2026-11-15.tsv`). A null cost value in an
+archived run comes from that scrub, not from capture. The tally output was byte-identical before
 and after.
 
 ## Run pointers
